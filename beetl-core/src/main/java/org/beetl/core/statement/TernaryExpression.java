@@ -29,6 +29,7 @@ package org.beetl.core.statement;
 
 import org.beetl.core.Context;
 import org.beetl.core.InferContext;
+import org.beetl.core.exception.BeetlException;
 
 /**
  * 三元表达式
@@ -55,7 +56,19 @@ public class TernaryExpression extends Expression
 
 	public Object evaluate(Context ctx)
 	{
-		boolean cond = (Boolean) condtion.evaluate(ctx);
+		
+		Object value = condtion.evaluate(ctx);
+		if(value==null){
+			BeetlException be = new BeetlException(BeetlException.NULL);
+			be.pushToken(condtion.token);
+			throw be;
+		}else if(!(value instanceof Boolean)){
+			BeetlException be = new BeetlException(BeetlException.BOOLEAN_EXPECTED_ERROR);
+			be.pushToken(condtion.token);
+			throw be;
+		}
+		boolean cond = (Boolean)value;
+
 		if (cond)
 		{
 			return a.evaluate(ctx);

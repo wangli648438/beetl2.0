@@ -1,4 +1,4 @@
-<project default="install" basedir="." xmlns:artifact="antlib:org.apache.maven.artifact.ant">
+<project default="release" basedir="." xmlns:artifact="antlib:org.apache.maven.artifact.ant">
 	<path id="maven-ant-tasks.classpath" path="maven-ant-tasks-2.1.3.jar" />
 	  <typedef resource="org/apache/maven/artifact/ant/antlib.xml"
 	           uri="antlib:org.apache.maven.artifact.ant"
@@ -125,9 +125,9 @@
 
     <target name="jar" depends="compile">
         <mkdir dir="${build.dist.dir}" />
-        <jar jarfile="${dist.jar}" whenempty="fail" >
+        <jar jarfile="${dist.jar}" whenempty="fail" level="9">
             <fileset dir="${build.classes.dir}" includes="**" excludes="**/*.g4,**/*.xml, **/lab/**" />
-        	<zipfileset includes="**/*.class" src="build/lib/antlr4-runtime-4.2.jar">
+        	<zipfileset includes="**/*.class" src="build/lib/antlr4-runtime-4.2.2.jar">
         		<exclude name="**/tree/gui/**"/>
         		<exclude name="**/tree/pattern/**"/>
         		<exclude name="**/tree/xpath/**"/>
@@ -180,7 +180,7 @@
 
     <target name="javadoc.jar" depends="javadoc">
         <mkdir dir="${build.dist.dir}" />
-        <jar jarfile="${dist.javadoc.jar}" whenempty="fail">
+        <jar jarfile="${dist.javadoc.jar}" whenempty="fail" level="9">
             <fileset dir="${build.javadoc.dir}" includes="**" />
             <manifest>
                 <attribute name="Built-By" value="${product.author}" />

@@ -3,12 +3,13 @@ package org.beetl.core;
 import java.io.IOException;
 import java.io.Reader;
 
-import junit.framework.TestCase;
-
 import org.beetl.core.resource.ClasspathResourceLoader;
 
-public class BasicTestCase extends TestCase
-{
+import junit.framework.TestCase;
+
+
+
+public class BasicTestCase extends TestCase {
 	// 日志对象
 
 	private static ClasspathResourceLoader rs;

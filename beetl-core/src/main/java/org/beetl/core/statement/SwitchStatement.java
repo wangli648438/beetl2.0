@@ -27,12 +27,13 @@
  */
 package org.beetl.core.statement;
 
+import java.util.LinkedHashMap;
 import java.util.Map.Entry;
-import java.util.TreeMap;
 
 import org.beetl.core.Context;
 import org.beetl.core.InferContext;
 import org.beetl.core.exception.BeetlException;
+import org.beetl.core.misc.ALU;
 
 /**
  * 类似go语言的switch
@@ -42,15 +43,15 @@ import org.beetl.core.exception.BeetlException;
 public class SwitchStatement extends Statement
 {
 	Expression value;
-	TreeMap<Expression, BlockStatement> map;
+	LinkedHashMap<Expression, BlockStatement> map;
 	//为了类型推测方便，实际上只要map就可以了
 	Expression[] condtionsList;
 	BlockStatement[] blocks;
 	//------------
 	BlockStatement defaultBlock;
 
-	public SwitchStatement(Expression value, TreeMap<Expression, BlockStatement> map, BlockStatement defaultBlock,
-			GrammarToken token)
+	public SwitchStatement(Expression value, LinkedHashMap<Expression, BlockStatement> map,
+			BlockStatement defaultBlock, GrammarToken token)
 	{
 		super(token);
 		this.map = map;
@@ -74,7 +75,7 @@ public class SwitchStatement extends Statement
 		boolean isMatch = false;
 		for (Expression exp : condtionsList)
 		{
-			if (isMatch || o.equals(exp.evaluate(ctx)))
+			if (isMatch ||ALU.equals(o, exp.evaluate(ctx)) )
 			{
 				isMatch = true;
 				BlockStatement block = map.get(exp);
@@ -107,7 +108,17 @@ public class SwitchStatement extends Statement
 
 		if (!isMatch && defaultBlock != null)
 		{
-			defaultBlock.execute(ctx);
+			defaultBlock.execute(ctx);			
+			switch (ctx.gotoFlag)
+			{
+				case IGoto.NORMAL:
+					break;
+				case IGoto.RETURN:
+					return;
+				case IGoto.BREAK:
+					ctx.gotoFlag = IGoto.NORMAL;
+					return;
+			}
 		}
 
 	}

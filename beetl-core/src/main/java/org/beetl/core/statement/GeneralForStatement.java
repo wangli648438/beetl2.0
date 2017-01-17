@@ -29,9 +29,11 @@ package org.beetl.core.statement;
 
 import org.beetl.core.Context;
 import org.beetl.core.InferContext;
+import org.beetl.core.exception.BeetlException;
 
 /**
- * for(var a=0;a<10;i++){}elsefor{}
+ * 
+ * for(var a=0;a &lt;10;i++){}elsefor{}
  * @author joelli
  *
  */
@@ -75,13 +77,25 @@ public class GeneralForStatement extends Statement implements IGoto
 		}
 		//todo 需要提高效率，减少hasLooped赋值，以及每次gotoFlag检测，然而，这个不太常用，目前不优化
 
-		boolean hasLooped = false;
+//		boolean hasLooped = false;
 		for (;;)
 		{
-			boolean bool = (Boolean) condtion.evaluate(ctx);
+			Object val = condtion.evaluate(ctx);
+			boolean bool = false;
+			if (val instanceof Boolean)
+			{
+				bool = ((Boolean) val).booleanValue();
+			}
+			else
+			{
+				BeetlException be = new BeetlException(BeetlException.BOOLEAN_EXPECTED_ERROR);
+				be.pushToken(condtion.token);
+				throw be;
+			}
+
 			if (bool)
 			{
-				hasLooped = true;
+//				hasLooped = true;
 				forPart.execute(ctx);
 				switch (ctx.gotoFlag)
 				{
@@ -89,7 +103,7 @@ public class GeneralForStatement extends Statement implements IGoto
 						break;
 					case IGoto.CONTINUE:
 						ctx.gotoFlag = IGoto.NORMAL;
-						continue;
+						break;
 					case IGoto.RETURN:
 						return;
 					case IGoto.BREAK:

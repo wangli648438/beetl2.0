@@ -8,10 +8,13 @@ import java.util.Stack;
 
 import org.beetl.core.Context;
 import org.beetl.core.Event;
+import org.beetl.core.GroupTemplate;
 import org.beetl.core.InferContext;
 import org.beetl.core.Listener;
 import org.beetl.core.exception.BeetlException;
+import org.beetl.core.misc.BeetlUtil;
 import org.beetl.core.misc.NumberUtil;
+import org.beetl.core.misc.PrimitiveArrayUtil;
 import org.beetl.core.om.AttributeAccess;
 import org.beetl.core.om.AttributeAccessFactory;
 import org.beetl.core.statement.Expression;
@@ -29,6 +32,7 @@ public class VarAttributeNodeListener implements Listener
 	public Object onEvent(Event e)
 	{
 		Stack stack = (Stack) e.getEventTaget();
+	
 		Object o = stack.peek();
 		if (o instanceof VarRef)
 		{
@@ -46,12 +50,14 @@ public class VarAttributeNodeListener implements Listener
 					// 换成速度较快的属性访问类
 					try
 					{
-						AttributeAccess aa = AttributeAccessFactory.buildFiledAccessor(type.cls, name);
+						GroupTemplate gt = (GroupTemplate)((Map)stack.get(0)).get("groupTemplate");
+						AttributeAccess aa = AttributeAccessFactory.buildFiledAccessor(type.cls, name,gt);
 						attr.aa = aa;
 					}
 					catch (BeetlException ex)
 					{
 						ex.pushToken(attr.token);
+						throw ex;
 					}
 
 				}
@@ -84,13 +90,15 @@ public class VarAttributeNodeListener implements Listener
 								try
 								{
 									String attributeName = (String) literal.obj;
-									AttributeAccess aa = AttributeAccessFactory.buildFiledAccessor(c, attributeName);
+									GroupTemplate gt = (GroupTemplate)((Map)stack.get(0)).get("groupTemplate");
+									AttributeAccess aa = AttributeAccessFactory.buildFiledAccessor(c, attributeName,gt);
 									ref.attributes[i] = new VarSquareAttribute2((VarSquareAttribute) attrs[i],
 											attributeName, aa);
 								}
 								catch (BeetlException ex)
 								{
 									ex.pushToken(attr.token);
+									throw ex;
 								}
 
 							}
@@ -187,7 +195,15 @@ public class VarAttributeNodeListener implements Listener
 		public Object evaluate(Context ctx, Object o)
 		{
 
-			return NumberUtil.valueOf(((Object[]) o).length);
+			if (o.getClass().getComponentType().isPrimitive())
+			{
+				return PrimitiveArrayUtil.getSize(o);
+			}
+			else
+			{
+				return NumberUtil.valueOf(((Object[]) o).length);
+
+			}
 		}
 
 		@Override
@@ -210,7 +226,12 @@ public class VarAttributeNodeListener implements Listener
 
 		public Object evaluate(Context ctx, Object o)
 		{
-			return aa.value(o, name);
+			try{
+				return aa.value(o, name);
+			}catch(ClassCastException ex){
+				throw BeetlUtil.throwCastException(ex, ctx.gt);
+			}
+			
 		}
 
 		@Override

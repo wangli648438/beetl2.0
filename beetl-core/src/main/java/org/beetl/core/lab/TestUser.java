@@ -1,25 +1,36 @@
 package org.beetl.core.lab;
 
-import java.text.ParseException;
-import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
 
 /**
  * @author 所有测试类采用的Pojo类
  *
+ *
  */
-public class TestUser
+public class TestUser 
 {
 	String name = "default";
 	int age = 18;
 	Date bir = null;
 	double salary = 890.12;
-	TestUser lover = null;
-	List friends = new ArrayList();
+	public TestUser lover = null;
+	List friends = null;
 	boolean isOk = false;
 	int id = 0;
+	byte recycle = 1;
+	
+
+	public static enum ORDER
+	{
+		OK, CANCEL
+	};
+
+	public static int MAX = 1;
+
+	public static ORDER tt = ORDER.OK;
 
 	public boolean isOk()
 	{
@@ -31,21 +42,27 @@ public class TestUser
 		this.isOk = isOk;
 	}
 
+	public int getCTitle()
+	{
+		return 0;
+	}
+	
 	public TestUser(String name)
 	{
 		this.name = name;
-		try
-		{
-			bir = new SimpleDateFormat("yyyy-MM-dd").parse("1978-02-14");
-		}
-		catch (ParseException e)
-		{
-			throw new RuntimeException(e.getMessage());
-		}
+		//		try
+		//		{
+		//			bir = new SimpleDateFormat("yyyy-MM-dd").parse("1978-02-14");
+		//		}
+		//		catch (ParseException e)
+		//		{
+		//			throw new RuntimeException(e.getMessage());
+		//		}
 	}
 
 	public String getName()
 	{
+		//		throw new RuntimeException();
 		return name;
 	}
 
@@ -56,7 +73,8 @@ public class TestUser
 
 	public int getAge()
 	{
-		return age;
+//		throw new ClassCastException();
+				return age;
 	}
 
 	public void setAge(int age)
@@ -96,7 +114,7 @@ public class TestUser
 
 	public List getFriends()
 	{
-		return friends;
+		return null;
 	}
 
 	public void setFriends(List friends)
@@ -104,14 +122,11 @@ public class TestUser
 		this.friends = friends;
 	}
 
-	public int getId()
-	{
-		return id;
-	}
 
-	public void setId(int id)
+
+	public Object getMap()
 	{
-		this.id = id;
+		return new HashMap();
 	}
 
 	public static TestUser getTestUser()
@@ -127,6 +142,26 @@ public class TestUser
 		joelli.setSalary(10000.01);
 		return joelli;
 
+	}
+
+	public int printUsers1(String... strings)
+	{
+		return strings.length;
+	}
+
+	public int printUsers(String str)
+	{
+		return 0;
+	}
+
+	public byte getRecycle()
+	{
+		return recycle;
+	}
+
+	public void setRecycle(byte recycle)
+	{
+		this.recycle = recycle;
 	}
 
 	public static List<TestUser> getTestUsers()
@@ -147,8 +182,31 @@ public class TestUser
 		all.add(joelli);
 		all.add(lucy);
 		all.add(lyy);
+
 		return all;
 
 	}
+
+
+	
+	public static Info getInfo(){
+		return new InfoImpl();
+	}
+	
+	public static interface  Info{
+		public String getMsg();
+	}
+	
+	private static class InfoImpl implements Info{
+
+		@Override
+		public String getMsg() {
+			// TODO Auto-generated method stub
+			return "aa";
+		}
+		
+	}
+
+	
 
 }

@@ -28,6 +28,7 @@
 package org.beetl.core.statement;
 
 import org.beetl.core.Context;
+import org.beetl.core.ContextFormat;
 import org.beetl.core.Format;
 import org.beetl.core.InferContext;
 import org.beetl.core.exception.BeetlException;
@@ -79,8 +80,21 @@ public class FormatExpression extends Expression
 			ex.pushToken(token);
 			throw ex;
 		}
-
-		return format.format(o, pattern);
+		try
+		{
+			if(format instanceof ContextFormat){
+				return ((ContextFormat)format).format(o, pattern, ctx);
+			}else{
+				return format.format(o, pattern);
+			}
+			
+		}
+		catch (Exception e)
+		{
+			BeetlException ex = new BeetlException(BeetlException.NATIVE_CALL_EXCEPTION, "调用格式化函数抛出异常", e);
+			ex.pushToken(token);
+			throw ex;
+		}
 
 	}
 

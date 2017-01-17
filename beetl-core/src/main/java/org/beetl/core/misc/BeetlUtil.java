@@ -32,8 +32,12 @@ import java.io.IOException;
 import java.io.OutputStreamWriter;
 import java.io.Writer;
 import java.net.URISyntaxException;
+import java.util.ArrayList;
+import java.util.List;
 
 import org.beetl.core.ByteWriter;
+import org.beetl.core.GroupTemplate;
+import org.beetl.core.fun.FileFunctionWrapper;
 import org.beetl.core.io.ByteWriter_Byte;
 import org.beetl.core.io.ByteWriter_Char;
 
@@ -44,6 +48,67 @@ import org.beetl.core.io.ByteWriter_Char;
  */
 public class BeetlUtil
 {
+	//一般变量名称12个足够了
+	static char[] commonArray = new char[12];
+
+	protected static String webroot;
+
+	static byte[] chars = new byte[]
+	{
+			// $,%,&,',(,),*,+,,,-, .,/, 0, 1, 2, 3, 4, 5, 6,
+			36, 0, 0, 0, 0, 0, 0, 0, 0, 0, 46, 0, 48, 49, 50, 51, 52, 53, 54,
+			// 7, 8, 9,:,;,<,=,>,?,@, A, B, C, D, E, F, G, H,
+			55, 56, 57, 0, 0, 0, 0, 0, 0, 0, 65, 66, 67, 68, 69, 70, 71, 72,
+			// I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W,
+			73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87,
+			// X, Y, Z,[,\,],^, _,`, a, b, c,  d,  e,  f,  g,
+			88, 89, 90, 0, 0, 0, 0, 95, 0, 97, 98, 99, 100, 101, 102, 103,
+			//  h,  i,  j,  k,  l,  m,  n,  o,  p,  q,  r,
+			104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114,
+			//  s,  t,  u,  v,  w,  x,  y,  z
+			115, 116, 117, 118, 119, 120, 121, 122 };
+	//最近一次错误记录
+	static int[] checkReult = new int[2];
+
+	static List<String> chineseTokens = new ArrayList<String>();
+	static List<String> englishTokens = new ArrayList<String>();
+	static
+	{
+		chineseTokens.add("，");
+		englishTokens.add(",");
+		chineseTokens.add("；");
+		englishTokens.add(";");
+
+		chineseTokens.add("）");
+		englishTokens.add(")");
+		chineseTokens.add("（");
+		englishTokens.add("(");
+
+		chineseTokens.add("‘");
+		englishTokens.add("'");
+		chineseTokens.add("“");
+		englishTokens.add("\"");
+		chineseTokens.add("。");
+		englishTokens.add(".");
+		chineseTokens.add("｝");
+		englishTokens.add("}");
+		chineseTokens.add("｛");
+		englishTokens.add("{");
+		chineseTokens.add("＝");
+		englishTokens.add("=");
+		chineseTokens.add("！");
+		englishTokens.add("!");
+		chineseTokens.add("％");
+		englishTokens.add("%");
+		chineseTokens.add("／");
+		englishTokens.add("/");
+		chineseTokens.add("＼");
+		englishTokens.add("\\");
+		chineseTokens.add("．");
+		englishTokens.add(".");
+
+	}
+
 	/**判断一个路径是否指到外部了，比如../../test.txt就指到外部
 	 * @param child
 	 * @return
@@ -120,18 +185,27 @@ public class BeetlUtil
 			{
 				//相对路径
 				int i = siblings.length() - 1;
+				boolean find = false;
 				for (; i > 0; i--)
 				{
 					char c = siblings.charAt(i);
 					if (c == '\\' || c == '/')
 					{
+						find = true;
 						break;
 					}
 				}
+				if (find)
+				{
+					String parent = siblings.substring(0, i + 1);
 
-				String parent = siblings.substring(0, i + 1);
+					relResourceId = parent.concat(resourceId);
+				}
+				else
+				{
+					relResourceId = resourceId;
+				}
 
-				relResourceId = parent.concat(resourceId);
 			}
 			else
 			{
@@ -152,6 +226,12 @@ public class BeetlUtil
 
 	public static Writer getWriterByByteWriter(ByteWriter byteWriter)
 	{
+		
+		ByteWriter temp = null;
+		while((temp=byteWriter.getParent())!=null){
+			byteWriter = temp;
+		}
+		
 		Writer w = null;
 		if (byteWriter instanceof ByteWriter_Char)
 		{
@@ -174,21 +254,155 @@ public class BeetlUtil
 		return w;
 	}
 
+	/**
+	 * 自定义WebRoot路径
+     */
+	public static void setWebroot(String webroot) {
+		BeetlUtil.webroot = webroot;
+	}
+
+	/**
+	 * 返回Web根路径,如果存在自定义webroot路径,则返回自定义webroot
+     */
 	public static String getWebRoot()
 	{
+		if (webroot != null) {
+			return webroot;
+		}
 		try
 		{
 			String path = BeetlUtil.class.getClassLoader().getResource("").toURI().getPath();
+			if (path == null)
+			{
+				throw new NullPointerException("Beetl未能自动检测到WebRoot，请手工指定WebRoot路径");
+			}
 			String root = new File(path).getParentFile().getParentFile().getCanonicalPath();
 			return root;
 		}
+
 		catch (IOException e)
 		{
 			throw new RuntimeException(e);
 		}
-		catch (URISyntaxException e) {
+		catch (URISyntaxException e)
+		{
 			throw new RuntimeException(e);
 		}
 
 	}
+
+	/**
+	 * check 命名合法性
+	 * @author 964700108@qq.com
+	 * @param str 需要check的字符串
+	 * @return
+	 * 		
+	 */
+	public static boolean checkNameing(String str)
+	{
+		int len = 0;
+		if (str == null || (len = str.length()) == 0)
+		{
+			return false;
+		}
+		if (len > commonArray.length)
+		{
+			commonArray = new char[len];
+		}
+		str.getChars(0, len, commonArray, 0);
+		int index = 0;
+		char word = commonArray[index++];
+		//首字母判断  不为数字 , .
+		if (word >= 46 && word <= 57)
+			setLog(1, word);
+		//尾字母判断
+		else if (commonArray[len - 1] == 46)
+			setLog(len, 46);
+		else
+			while (true)
+			{
+				if (word < 36 || word > 122 || chars[word - 36] == 0)
+				{
+					setLog(index + 1, word);
+					return false;
+				}
+				if (index == len)
+					return true;
+				word = commonArray[index++];
+			}
+		return false;
+	}
+
+	private static void setLog(int index, int errorChar)
+	{
+		checkReult[0] = index;
+		checkReult[1] = errorChar;
+	}
+
+	public static int[] getLog()
+	{
+		return checkReult;
+	}
+
+	public static String reportChineseTokenError(String msg)
+	{
+
+		if (chineseTokens.contains(msg))
+		{
+			return msg + " 貌似输入了中文符号,应该是 " + englishTokens.get(chineseTokens.indexOf(msg));
+		}
+		else
+		{
+			return msg;
+		}
+	}
+	
+	/*优化引擎会假定传给模板的变量是同一类型（同一个class或者具有同样接口或者父类,如果不是这样，会导致ClassCastException*/
+	public static  RuntimeException throwCastException(ClassCastException ex,GroupTemplate gt){
+		String clsName = gt.getConf().getEngine();
+		if(clsName.equals("org.beetl.core.engine.DefaultTemplateEngine")){
+			return ex;
+		}else{
+			String detail = ex.getMessage();
+			detail = detail + "如果采用优化引擎，会假定传给模板的变量是同一类型,如果不是，请使用directive dynamic 变量；来避免";
+			throw new RuntimeException(detail,ex);
+		}
+	}
+	
+	public static void autoFileFunctionRegister(GroupTemplate gt,File funtionRoot, String ns, String path,String functionSuffix){
+		File[] files = funtionRoot.listFiles();
+		for (File f : files)
+		{
+			if (f.isDirectory())
+			{
+				autoFileFunctionRegister(gt,f, f.getName().concat("."), path.concat(f.getName()).concat("/"),functionSuffix);
+			}
+			else if (f.getName().endsWith(functionSuffix))
+			{
+				String resourceId = path + f.getName();
+				String fileName = f.getName();
+				fileName = fileName.substring(0, (fileName.length() - functionSuffix.length() - 1));
+				String functionName = ns.concat(fileName);
+				FileFunctionWrapper fun = new FileFunctionWrapper(resourceId);
+				gt.registerFunction(functionName, fun);
+			}
+		}
+	}
+	
+	
+	public static String getParameterDescription(Class[] types){
+		if(types==null||types.length==0){
+			return "()";
+		}
+		
+		StringBuilder sb = new StringBuilder("(");
+		for(Class clzz:types){
+			sb.append(clzz.getSimpleName()).append(",");
+		}
+		sb.setCharAt(sb.length()-1, ')');
+		return sb.toString();
+	}
+	
+	
+	
 }

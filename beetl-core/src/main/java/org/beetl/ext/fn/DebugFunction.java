@@ -32,7 +32,10 @@ import org.beetl.core.Function;
 
 /**
  * 在控制台输出对象，如
- * <% debug(user) %>,该方法输出该方法的行数，以及对象的toString返回的字符串:
+ * <pre>
+ * &lt;% debug(user)%&gt;,
+ * </pre>
+ * 该方法输出该方法的行数，以及对象的toString返回的字符串:
  * <pre>
  * System.out.println(paras[0].toString());	
  * </pre>
@@ -49,26 +52,42 @@ public class DebugFunction implements Function
 	{
 		if (!enable)
 			return "";
-		Object o = paras[0];
+		String[] expStrs = (String[]) paras[paras.length - 2];
 		StringBuilder sb = new StringBuilder();
-		if (o != null)
+		for (int i = 0; i < paras.length - 2; i++)
 		{
-			sb.append(o.toString());
-		}
-		else
-		{
-			sb.append("null");
+			Object o = paras[i];
+			if (expStrs[i] != null)
+			{
+				//对于debug常量，不需要，参考AntlrProgramBuilder.parseFunExp
+				sb.append(expStrs[i]).append("=");
+			}
+
+			if (o != null)
+			{
+				if (o instanceof CharSequence)
+				{
+					sb.append("\"").append(o.toString()).append("\"");
+				}
+				else
+				{
+					sb.append(o.toString());
+				}
+
+			}
+			else
+			{
+				sb.append("null");
+			}
+			sb.append(",");
 		}
 
-		String line = paras[1].toString();
-
+		String line = paras[paras.length - 1].toString();
 		String resourceId = ctx.getResourceId();
-
 		sb.append(" [在").append(line).append("行@").append(resourceId).append("]");
 
 		System.out.println(sb);
 
 		return "";
 	}
-
 }

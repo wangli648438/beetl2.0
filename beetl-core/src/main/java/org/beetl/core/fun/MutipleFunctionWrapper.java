@@ -30,11 +30,11 @@ package org.beetl.core.fun;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 
 import org.beetl.core.Context;
 import org.beetl.core.exception.BeetlException;
+import org.beetl.core.misc.BeetlUtil;
 import org.beetl.core.om.ObjectMethodMatchConf;
 import org.beetl.core.om.ObjectUtil;
 
@@ -47,14 +47,15 @@ public class MutipleFunctionWrapper extends FunctionWrapper
 {
 
 	Method[] ms = null;
-	HashMap<Integer, List<MethodContext>> map = new HashMap<Integer, List<MethodContext>>();
 	String methodName = null;
+	MethodContext[] mcs = null;
 
-	public MutipleFunctionWrapper(String funName, Object target, Method[] ms)
+	public MutipleFunctionWrapper(String funName, Class cls, Object target, Method[] ms)
 	{
 		super(funName);
 		this.ms = ms;
 		this.target = target;
+		this.cls = cls;
 		int index = this.functionName.lastIndexOf(".");
 		if (index != -1)
 		{
@@ -64,135 +65,91 @@ public class MutipleFunctionWrapper extends FunctionWrapper
 		{
 			methodName = functionName;
 		}
+		List<MethodContext> list = new ArrayList<MethodContext>();
 		for (Method m : ms)
 		{
 			Class[] paraType = m.getParameterTypes();
 			MethodContext mc = new MethodContext();
 			mc.m = m;
 			mc.parasType = paraType;
-			int len = paraType.length;
+
 			if (paraType.length != 0 && paraType[paraType.length - 1] == Context.class)
 			{
 				mc.contextRequired = true;
-				len--;
+
 			}
-			List<MethodContext> list = map.get(len);
-			if (list == null)
-			{
-				list = new ArrayList<MethodContext>();
-				//根据长度快速找到应该调用的方法
-				map.put(len, list);
-			}
+
 			list.add(mc);
 
 		}
+		mcs = (MethodContext[]) list.toArray(new MethodContext[0]);
 
 	}
 
 	@Override
 	public Object call(Object[] paras, Context ctx)
 	{
-		List<MethodContext> list = map.get(paras.length);
-		if (list == null)
-		{
-			BeetlException ex = new BeetlException(BeetlException.NATIVE_CALL_INVALID, "未发现方法 " + this.functionName);
-			throw ex;
-		}
-
+		Class[] parameterType = null;
 		try
 		{
-			if (list.size() == 1)
+
+			//比较慢的情况，要考虑到底哪个方法适合调用
+			
+			Class[] parameterContextType = null;
+			Class[] parameterNoContextType = null;
+
+			for (MethodContext mc : mcs)
 			{
-				MethodContext mc = list.get(0);
-				Object[] newArgs = paras;
+
 				if (mc.contextRequired)
 				{
-					newArgs = new Object[paras.length + 1];
-					System.arraycopy(paras, 0, newArgs, 0, paras.length);
-					newArgs[paras.length] = ctx;
+					if (parameterContextType == null)
+					{
+						parameterContextType = new Class[paras.length + 1];
+						int i = 0;
+						for (Object para : paras)
+						{
+							parameterContextType[i++] = para != null ? para.getClass() : null;
+						}
 
+						parameterContextType[i] = Context.class;
+
+					}
+					parameterType = parameterContextType;
 				}
-
-				return ObjectUtil.invokeObject(target, this.methodName, newArgs);
-
-			}
-			else
-			{
-				//比较慢的情况，要考虑到底哪个方法适合调用
-				Class[] parameterType = null;
-				Class[] parameterContextType = null;
-				Class[] parameterNoContextType = null;
-
-				for (MethodContext mc : list)
+				else
 				{
-
-					if (mc.contextRequired)
+					if (parameterNoContextType == null)
 					{
-						if (parameterContextType == null)
+						parameterNoContextType = new Class[paras.length];
+						int i = 0;
+						for (Object para : paras)
 						{
-							parameterContextType = new Class[paras.length + 1];
-							int i = 0;
-							for (Object para : paras)
-							{
-								parameterContextType[i++] = para != null ? para.getClass() : null;
-							}
-
-							parameterContextType[i] = Context.class;
-
-						}
-						parameterType = parameterContextType;
-					}
-					else
-					{
-						if (parameterNoContextType == null)
-						{
-							parameterNoContextType = new Class[paras.length];
-							int i = 0;
-							for (Object para : paras)
-							{
-								parameterNoContextType[i++] = para != null ? para.getClass() : null;
-							}
-
-						}
-						parameterType = parameterNoContextType;
-					}
-
-					ObjectMethodMatchConf conf = ObjectUtil.match(mc.m, parameterType);
-					if (conf == null)
-					{
-						continue;
-					}
-
-					if (!conf.isNeedConvert)
-					{
-						if (mc.contextRequired)
-						{
-							Object[] newParas = this.getContextParas(paras, ctx);
-							return mc.m.invoke(target, newParas);
-						}
-						else
-						{
-							return mc.m.invoke(target, paras);
+							parameterNoContextType[i++] = para != null ? para.getClass() : null;
 						}
 
 					}
-					else
-					{
-						Object[] newParas = new Object[paras.length + (mc.contextRequired ? 1 : 0)];
-						for (int j = 0; j < paras.length; j++)
-						{
-							newParas[j] = conf.convert(paras[j], j);
-						}
+					parameterType = parameterNoContextType;
+				}
 
-						if (mc.contextRequired)
-						{
-							newParas[newParas.length - 1] = ctx;
-						}
-						return mc.m.invoke(target, newParas);
-
-					}
+				ObjectMethodMatchConf conf = ObjectUtil.match(mc.m, parameterType);
+				if (conf == null)
+				{
+					continue;
+				}
+				Object[] newParas = null;
+				if (mc.contextRequired)
+				{
+					newParas = this.getContextParas(paras, ctx);
 
 				}
+				else
+				{
+					newParas = paras;
+				}
+
+				newParas = conf.convert(newParas);
+				return mc.m.invoke(target, newParas);
 
 			}
 
@@ -226,7 +183,7 @@ public class MutipleFunctionWrapper extends FunctionWrapper
 			}
 
 		}
-		BeetlException ex = new BeetlException(BeetlException.NATIVE_CALL_INVALID, "找不到方法 " + this.functionName);
+		BeetlException ex = new BeetlException(BeetlException.NATIVE_CALL_INVALID, "找不到方法 " + this.functionName+BeetlUtil.getParameterDescription(parameterType));
 		throw ex;
 
 	}
@@ -236,8 +193,8 @@ public class MutipleFunctionWrapper extends FunctionWrapper
 
 		Class[] parameterContextType = null;
 		Class[] parameterNoContextType = null;
-		List<MethodContext> list = map.get(parameterType.length);
-		for (MethodContext mc : list)
+
+		for (MethodContext mc : mcs)
 		{
 
 			if (mc.contextRequired)

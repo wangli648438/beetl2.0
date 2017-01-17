@@ -1,9 +1,29 @@
 package org.beetl.performance.lab;
 
+
+
 public class User {
 	String name = "user";
 	int id;
 	double price;
+
+	private class MyPrivateTest implements PrivateTest
+	{
+
+		@Override
+		public String getName()
+		{
+			return "abc";
+		}
+
+	}
+
+	MyPrivateTest pt = new MyPrivateTest();
+
+	public PrivateTest getPt()
+	{
+		return pt;
+	}
 
 	public String getName() {
 		return name;
@@ -35,6 +55,10 @@ public class User {
 
 	public void setPrice(double price) {
 		this.price = price;
+	}
+	
+	public Object get(String cr){
+		return "";
 	}
 
 }

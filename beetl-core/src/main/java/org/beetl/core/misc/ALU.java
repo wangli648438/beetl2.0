@@ -52,6 +52,9 @@ public class ALU
 	public static final int SHORT = 7;
 	public static final int CHAR = 8;
 	public static final int HS = 9;
+	
+	public static int scale = 12 ;
+	public static int round =  BigDecimal.ROUND_HALF_DOWN;
 
 	public static int getBaseType(final Object o1, final Object o2)
 	{
@@ -514,7 +517,9 @@ public class ALU
 				case HS:
 					BigDecimal b1 = getBigDecimal(o1),
 					b2 = getBigDecimal(o2);
-					return b1.divide(b2);
+					BigDecimal b= b1.divide(b2, scale, round);
+					return b.stripTrailingZeros();
+//					return b1.divide(b2);
 				default:
 					throw UnsupportedTypeException(o1, o2, node1, node2, "/");
 			}
@@ -647,8 +652,16 @@ public class ALU
 				case HS:
 					BigDecimal b1 = getBigDecimal(o1),
 					b2 = getBigDecimal(o2);
-					return b1.equals(b2);
+					return b1.compareTo(b2)==0;
 			}
+		}
+		else if (o1 instanceof Enum)
+		{
+			return (o1.toString()).equals(o2);
+		}
+		else if (o2 instanceof Enum)
+		{
+			return (o2.toString()).equals(o1);
 		}
 
 		return false;
@@ -687,7 +700,11 @@ public class ALU
 					b2 = getBigDecimal(o2);
 					return b1.compareTo(b2) > 0;
 				default:
-					throw UnsupportedTypeException(o1, o2, node1, node2, ">");
+					int result = compareObject(o1, o2, node1, node2, ">");
+					if (result == -2)
+						throw UnsupportedTypeException(o1, o2, node1, node2, ">");
+					else
+						return result > 0;
 			}
 		}
 		else
@@ -723,7 +740,11 @@ public class ALU
 					b2 = getBigDecimal(o2);
 					return b1.compareTo(b2) >= 0;
 				default:
-					throw UnsupportedTypeException(o1, o2, node1, node2, ">=");
+					int result = compareObject(o1, o2, node1, node2, ">=");
+					if (result == -2)
+						throw UnsupportedTypeException(o1, o2, node1, node2, ">=");
+					else
+						return result >= 0;
 			}
 		}
 		else
@@ -759,7 +780,11 @@ public class ALU
 					b2 = getBigDecimal(o2);
 					return b1.compareTo(b2) < 0;
 				default:
-					throw UnsupportedTypeException(o1, o2, node1, node2, "<");
+					int result = compareObject(o1, o2, node1, node2, "<");
+					if (result == -2)
+						throw UnsupportedTypeException(o1, o2, node1, node2, "<");
+					else
+						return result < 0;
 			}
 		}
 		else
@@ -795,7 +820,11 @@ public class ALU
 					b2 = getBigDecimal(o2);
 					return b1.compareTo(b2) <= 0;
 				default:
-					throw UnsupportedTypeException(o1, o2, node1, node2, "<=");
+					int result = compareObject(o1, o2, node1, node2, "<=");
+					if (result == -2)
+						throw UnsupportedTypeException(o1, o2, node1, node2, "<=");
+					else
+						return result <= 0;
 			}
 		}
 		else
@@ -805,6 +834,37 @@ public class ALU
 	}
 
 	// *******************
+
+	private static int compareObject(Object a, Object b, final ASTNode node1, final ASTNode node2, String type)
+	{
+		if (a instanceof Comparable && b instanceof Comparable)
+		{
+			Comparable ac = (Comparable) a;
+			try
+			{
+				int result = ac.compareTo(b);
+				if (result > 0)
+					return 1;
+				else if (result < 0)
+					return -1;
+				return result;
+			}
+
+			catch (RuntimeException e)
+			{
+				BeetlException ex = new BeetlException(BeetlException.EXPRESSION_NOT_COMPATIBLE, e);
+				GrammarToken token = GrammarToken.createToken(node1.token.text + " " + node2.token.text,
+						node1.token.line);
+				ex.pushToken(token);
+				throw ex;
+			}
+
+		}
+		else
+		{
+			return -2;
+		}
+	}
 
 	private static RuntimeException UnsupportedTypeException(final Object o1, final Object o2, final ASTNode node1,
 			final ASTNode node2, String type)

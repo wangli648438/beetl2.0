@@ -29,8 +29,10 @@ package org.beetl.core;
 
 import java.io.IOException;
 import java.io.Reader;
+import java.io.Writer;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -40,8 +42,13 @@ import org.beetl.core.cache.Cache;
 import org.beetl.core.cache.ProgramCacheFactory;
 import org.beetl.core.exception.BeetlException;
 import org.beetl.core.exception.HTMLTagParserException;
+import org.beetl.core.exception.ScriptEvalError;
 import org.beetl.core.fun.FunctionWrapper;
+import org.beetl.core.misc.BeetlUtil;
+import org.beetl.core.misc.ByteClassLoader;
 import org.beetl.core.misc.ClassSearch;
+import org.beetl.core.misc.PrimitiveArrayUtil;
+import org.beetl.core.om.AttributeAccess;
 import org.beetl.core.om.ObjectUtil;
 import org.beetl.core.resource.ClasspathResourceLoader;
 import org.beetl.core.statement.ErrorGrammarProgram;
@@ -56,7 +63,10 @@ public class GroupTemplate
 {
 
 	/* 模板在运行过程中,class方法，accessory调用等需要的classLoader */
-	ClassLoader classLoader = null;
+	ClassLoader classLoader = GroupTemplate.class.getClassLoader();
+	
+	ByteClassLoader byteLoader = new ByteClassLoader(classLoader);
+
 	ResourceLoader resourceLoader = null;
 	Configuration conf = null;
 	TemplateEngine engine = null;
@@ -73,6 +83,7 @@ public class GroupTemplate
 	NativeSecurityManager nativeSecurity = null;
 	ErrorHandler errorHandler = null;
 	Map<String, Object> sharedVars = null;
+	
 
 	/**
 	 * 使用默认的配置和默认的模板资源加载器{@link ClasspathResourceLoader}，
@@ -156,9 +167,17 @@ public class GroupTemplate
 		this.initTag();
 		this.initVirtual();
 
-		classSearch = new ClassSearch(conf.getPkgList());
+		classSearch = new ClassSearch(conf.getPkgList(),this);
 		nativeSecurity = (NativeSecurityManager) ObjectUtil.instance(conf.getNativeSecurity());
-		errorHandler = (ErrorHandler) ObjectUtil.instance(conf.errorHandlerClass);
+		if (conf.errorHandlerClass == null)
+		{
+			errorHandler = null;
+		}
+		else
+		{
+			errorHandler = (ErrorHandler) ObjectUtil.instance(conf.errorHandlerClass);
+
+		}
 	}
 
 	protected void initFunction()
@@ -177,7 +196,7 @@ public class GroupTemplate
 		{
 			String name = entry.getKey();
 			String clsName = entry.getValue();
-			this.registerFunctionPackage(name, ObjectUtil.instance(clsName));
+			this.registerFunctionPackage(name, ObjectUtil.getClassByName(clsName), ObjectUtil.tryInstance(clsName));
 		}
 
 	}
@@ -257,7 +276,15 @@ public class GroupTemplate
 					}
 					else if (o.getClass().isArray())
 					{
-						return ((Object[]) o).length;
+
+						if (o.getClass().getComponentType().isPrimitive())
+						{
+							return PrimitiveArrayUtil.getSize(o);
+						}
+						else
+						{
+							return ((Object[]) o).length;
+						}
 
 					}
 					else
@@ -289,21 +316,201 @@ public class GroupTemplate
 	}
 
 	/**
-	 * 使用loader 和 默认的模板引擎配置来初始化GroupTempalte
+	 * GroupTempalte 动态加载默写类使用的classloader
 	 * 
-	 * @param loader
+	 * @param classLoader
 	 *            资源加载器
 	 * 
 	 */
 
-	protected void setClassLoader(ClassLoader classLoader)
+	public void setClassLoader(ClassLoader classLoader)
 	{
+		this.classLoader = classLoader;
+		byteLoader = new ByteClassLoader(classLoader);
+	}
+	
+	
+	
+	/**
+	 * 返回用来加载动态类的classloader，此加载类的parent loader是通过
+	 * setClassLoader 添加的，默认就是加载beetl包的classloader
+	 * @return
+	 */
+	public ByteClassLoader getByteLoader() {
+		return byteLoader;
+	}
+
+	
+
+	/** 执行某个脚本，参数是paras，返回的是顶级变量
+	 * @param key
+	 * @param paras
+	 * @return
+	 */
+	public Map runScript(String key, Map<String, Object> paras) throws ScriptEvalError
+	{
+		return this.runScript(key, paras, null);
 
 	}
 
+	/**执行某个脚本，参数是paras，返回的是顶级变量 ,如果script有输出，则输出到writer里
+	 * @param key
+	 * @param paras
+	 * @param w
+	 * @return
+	 */
+	public Map runScript(String key, Map<String, Object> paras, Writer w) throws ScriptEvalError
+	{
+		return this.runScript(key, paras, w, this.resourceLoader);
+	}
+
+	/**
+	 * 执行某个脚本，参数是paras，返回的是顶级变量 
+	 * @param key
+	 * @param paras
+	 * @param w
+	 * @param loader 额外的资源管理器就在脚本
+	 * @return
+	 * @throws ScriptEvalError
+	 */
+	public Map runScript(String key, Map<String, Object> paras, Writer w, ResourceLoader loader) throws ScriptEvalError
+	{
+		Template t = loadScriptTemplate(key, loader);
+		t.fastBinding(paras);
+		if (w == null)
+		{
+			t.render();
+		}
+		else
+		{
+			t.renderTo(w);
+		}
+
+		try
+		{
+			Map map = getSrirptTopScopeVars(t);
+			if (map == null)
+			{
+				throw new ScriptEvalError();
+			}
+			return map;
+		}
+		catch (ScriptEvalError ex)
+		{
+			throw ex;
+		}
+		catch (Exception ex)
+		{
+			throw new ScriptEvalError(ex);
+		}
+
+	}
+
+	private Map getSrirptTopScopeVars(Template t)
+	{
+		Map<String, Integer> idnexMap = t.program.metaData.getTemplateRootScopeIndexMap();
+		Object[] values = t.ctx.vars;
+		Map<String, Object> result = new HashMap<String, Object>();
+		for (Entry<String, Integer> entry : idnexMap.entrySet())
+		{
+			String name = entry.getKey();
+			int index = entry.getValue();
+			Object value = values[index];
+			result.put(name, value);
+		}
+		if (values == null)
+		{
+			return null;
+		}
+		Object ret = t.ctx.vars[t.ctx.vars.length - 1];
+		if (ret != Context.NOT_EXIST_OBJECT)
+		{
+			result.put("return", ret);
+		}
+
+		return result;
+	}
+
+	private Template loadScriptTemplate(String key, ResourceLoader loader)
+	{
+		Program program = (Program) this.programCache.get(key);
+		if (program == null)
+		{
+			synchronized (key)
+			{
+				if (program == null)
+				{
+					Resource resource = loader.getResource(key);
+					program = this.loadScript(resource);
+					this.programCache.set(key, program);
+					return new Template(this, program, this.conf);
+				}
+			}
+		}
+
+		if (resourceLoader.isModified(program.rs))
+		{
+			synchronized (key)
+			{
+				Resource resource = loader.getResource(key);
+				program = this.loadScript(resource);
+				this.programCache.set(key, program);
+			}
+		}
+
+		return new Template(this, program, this.conf);
+	}
+
+	/**使用额外的资源加载器加载模板
+	 * @param key
+	 * @param loader 
+	 * @return
+	 */
+	public Template getTemplate(String key, ResourceLoader loader)
+	{
+		return this.getTemplateByLoader(key, loader,true);
+	}
+
+	/** 获取模板key的标有ajaxId的模板片段。
+	 * @param key
+	 * @param ajaxId
+	 * @param loader
+	 * @return
+	 */
+	public Template getAjaxTemplate(String key, String ajaxId, ResourceLoader loader)
+	{
+		Template template = this.getTemplateByLoader(key, loader,true);
+		template.ajaxId = ajaxId;
+		return template;
+	}
+
+	/** 得到模板，并指明父模板
+	 * @param key
+	 * @param parent
+	 * @return
+	 */
+	public Template getTemplate(String key, String parent, ResourceLoader loader)
+	{
+		Template template = this.getTemplate(key, loader);
+		template.isRoot = false;
+		return template;
+	}
+
+	/** 得到模板，并指明父模板。
+	 * @param key
+	 * @param parent，此参数目前未使用
+	 * @return
+	 */
 	public Template getTemplate(String key, String parent)
 	{
 		Template template = this.getTemplate(key);
+		template.isRoot = false;
+		return template;
+	}
+	
+	public Template getHtmlFunctionOrTagTemplate(String key, String parent)
+	{
+		Template template = this.getHtmlFunctionOrTagTemplate(key);
 		template.isRoot = false;
 		return template;
 	}
@@ -315,6 +522,34 @@ public class GroupTemplate
 	 */
 	public Template getTemplate(String key)
 	{
+
+		return getTemplateByLoader(key, this.resourceLoader,true);
+	}
+
+	/**
+	 * 对于用html function 或者html tag，允许使用特殊定界符号，此方法会检查是否为此配置了特殊的定界符号，并引用
+	 * @param key
+	 * @return
+	 */
+	public Template getHtmlFunctionOrTagTemplate(String key){
+		return getTemplateByLoader(key, this.resourceLoader,false);
+	}
+	
+	/** 获取模板的ajax片段，
+	 * @param key ，key为模板resourceId
+	 * @param ajaxId,ajax标示
+	 * @return
+	 */
+	public Template getAjaxTemplate(String key, String ajaxId)
+	{
+
+		Template t = getTemplateByLoader(key, this.resourceLoader,true);
+		t.ajaxId = ajaxId;
+		return t;
+	}
+
+	private Template getTemplateByLoader(String key, ResourceLoader loader,boolean isTextTemplate)
+	{
 		key = key.intern();
 		Program program = (Program) this.programCache.get(key);
 		if (program == null)
@@ -323,8 +558,8 @@ public class GroupTemplate
 			{
 				if (program == null)
 				{
-					Resource resource = resourceLoader.getResource(key);
-					program = this.loadTemplate(resource);
+					Resource resource = loader.getResource(key);
+					program = this.loadTemplate(resource,isTextTemplate);
 					this.programCache.set(key, program);
 					return new Template(this, program, this.conf);
 				}
@@ -335,37 +570,66 @@ public class GroupTemplate
 		{
 			synchronized (key)
 			{
-				Resource resource = resourceLoader.getResource(key);
-				program = this.loadTemplate(resource);
+				Resource resource = loader.getResource(key);
+				program = this.loadTemplate(resource,isTextTemplate);
 				this.programCache.set(key, program);
 			}
 		}
 
 		return new Template(this, program, this.conf);
-
 	}
 
-	/** 判断缓存中是否存在模板
-	 * @param key
-	 * @return
-	 */
 	public Program getProgram(String key)
 	{
 		Program program = (Program) this.programCache.get(key);
 		return program;
 	}
 
-	private Program loadTemplate(Resource res)
+	/** 判断是否加载过模板
+	 * @param key
+	 * @return
+	 */
+	public boolean hasTemplate(String key)
+	{
+		Program program = (Program) this.programCache.get(key);
+		return program != null;
+	}
+
+	/** 手工删除加载过的模板
+	 * @param key
+	 */
+	public void removeTemplate(String key)
+	{
+		programCache.remove(key);
+	}
+
+	private Program loadTemplate(Resource res,boolean isTextTemplate)
 	{
 
 		Transformator sf = null;
 		try
 		{
 			Reader reader = res.openReader();
-			sf = new Transformator(conf.placeholderStart, conf.placeholderEnd, conf.statementStart, conf.statementEnd);
+			if(isTextTemplate){
+				sf = new Transformator(conf.placeholderStart, conf.placeholderEnd, conf.statementStart, conf.statementEnd);
+				
+				
+			}else{
+				if(conf.isHasFunctionLimiter()){
+					sf = new Transformator(conf.placeholderStart, conf.placeholderEnd,
+							conf.functionLimiterStart, 
+									conf.functionLimiterEnd);
+				}else{
+					sf = new Transformator(conf.placeholderStart, conf.placeholderEnd, conf.statementStart, conf.statementEnd);
+					
+				}
+				
+				
+			}
 			if (this.conf.isHtmlTagSupport())
 			{
-				sf.enableHtmlTagSupport(conf.getHtmlTagStart(), conf.getHtmlTagEnd());
+				sf.enableHtmlTagSupport(conf.getHtmlTagStart(), conf.getHtmlTagEnd(),
+						this.conf.getHtmlTagBindingAttribute());
 			}
 			Reader scriptReader;
 			scriptReader = sf.transform(reader);
@@ -377,19 +641,45 @@ public class GroupTemplate
 		{
 			ErrorGrammarProgram ep = new ErrorGrammarProgram(res, this, sf.lineSeparator);
 			ep.setException(e);
-
+			e.pushResource(res.id);
 			return ep;
 		}
 		catch (IOException e)
 		{
 			ErrorGrammarProgram ep = new ErrorGrammarProgram(res, this, sf.lineSeparator);
 			BeetlException ex = new BeetlException(BeetlException.TEMPLATE_LOAD_ERROR);
+			ex.pushResource(res.id);
+
 			ep.setException(ex);
+
 			return ep;
 		}
 		catch (BeetlException ex)
 		{
 			ErrorGrammarProgram ep = new ErrorGrammarProgram(res, this, sf != null ? sf.lineSeparator : null);
+			ex.pushResource(res.id);
+			ep.setException(ex);
+			return ep;
+		}
+
+	}
+
+	private Program loadScript(Resource res)
+	{
+
+		try
+		{
+			Reader scriptReader = res.openReader();
+			Program program = engine.createProgram(res, scriptReader, Collections.EMPTY_MAP,
+					System.getProperty("line.separator"), this);
+			return program;
+
+		}
+
+		catch (BeetlException ex)
+		{
+			ErrorGrammarProgram ep = new ErrorGrammarProgram(res, this, System.getProperty("line.separator"));
+			ex.pushResource(res.id);
 			ep.setException(ex);
 			return ep;
 		}
@@ -401,7 +691,8 @@ public class GroupTemplate
 	 */
 	public void close()
 	{
-
+		this.resourceLoader.close();
+		ContextLocalBuffer.threadLocal.remove();
 	}
 
 	// /** 为事件类型注册一个监听器
@@ -457,11 +748,7 @@ public class GroupTemplate
 
 	public void registerFunction(String name, Function fn)
 	{
-		/*
-		if (this.containTag(name)) {
-			throw new RuntimeException("Function和Tag方法名不能重复:" + name);
-		}
-		*/
+		checkFunctionName(name);
 		this.fnMap.put(name, fn);
 	}
 
@@ -474,8 +761,33 @@ public class GroupTemplate
 	 */
 	public void registerFunctionPackage(String packageName, Object o)
 	{
+		checkFunctionName(packageName);
+		registerFunctionPackage(packageName, o.getClass(), o);
 
-		List<FunctionWrapper> list = FunctionWrapper.getFunctionWrapper(packageName, o);
+	}
+
+	public void registerFunctionPackage(String packageName, Class cls)
+	{
+		checkFunctionName(packageName);
+		Object o = ObjectUtil.tryInstance(cls.getName());
+		registerFunctionPackage(packageName, cls, o);
+
+	}
+
+	private void checkFunctionName(String name)
+	{
+
+		if (!BeetlUtil.checkNameing(name))
+		{
+			int[] log = BeetlUtil.getLog();
+			throw new RuntimeException("注册方法名不合法:" + name + ",错误位置:" + log[0] + ",出现错误的字符:" + (char) log[1]);
+		}
+	}
+
+	protected void registerFunctionPackage(String packageName, Class target, Object o)
+	{
+
+		List<FunctionWrapper> list = FunctionWrapper.getFunctionWrapper(packageName, target, o);
 		for (FunctionWrapper fw : list)
 		{
 			this.registerFunction(fw.functionName, fw);
@@ -484,7 +796,7 @@ public class GroupTemplate
 	}
 
 	/**
-	 * 注册一个自定义格式化函数，参考{@link org.bee.tl.ext.DateFormat}
+	 * 注册一个自定义格式化函数
 	 * 
 	 * @param name
 	 * @param format
@@ -502,12 +814,31 @@ public class GroupTemplate
 
 	public void registerTag(String name, Class tagCls)
 	{
+		checkTagName(name);
 		this.tagFactoryMap.put(name, new DefaultTagFactory(tagCls));
 	}
 
 	public void registerTagFactory(String name, TagFactory tagFactory)
 	{
+		checkTagName(name);
 		this.tagFactoryMap.put(name, tagFactory);
+	}
+
+	private void checkTagName(String name)
+	{
+		if (!BeetlUtil.checkNameing(name))
+		{
+			int[] log = BeetlUtil.getLog();
+			if (log[1] == 58)
+			{
+				throw new RuntimeException("注册Tag名称不合法:" + name + ",错误位置:" + log[0] + ",出现错误的字符:" + (char) log[1]
+						+ ",请使用\'.\'");
+			}
+			else
+			{
+				throw new RuntimeException("注册Tag名称不合法:" + name + ",错误位置:" + log[0] + ",出现错误的字符:" + (char) log[1]);
+			}
+		}
 	}
 
 	public TagFactory getTagFactory(String name)
@@ -594,5 +925,11 @@ public class GroupTemplate
 	{
 		this.errorHandler = errorHandler;
 	}
+
+	public ClassSearch getClassSearch() {
+		return classSearch;
+	}
+	
+	
 
 }

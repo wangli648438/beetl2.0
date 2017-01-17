@@ -37,6 +37,7 @@ statement
     |   assignMent END  #assignSt
     |   functionTagCall #functionTagSt 
     |   statementExpression END   #statmentExpSt 
+    |   Ajax Identifier Identifier? COLON block   #ajaxSt 
     |   END   #end
       
     ;
@@ -71,7 +72,7 @@ varDeclareList :  assignMent (COMMA assignMent)*
 ;	
 assignMent	
 	:	Identifier                  #assignId
-	|	Identifier ASSIN expression #assignGeneral 
+	|	generalAssignExp            #assignGeneralInSt 
 	|	Identifier ASSIN  block     #assignTemplateVar
 
 
@@ -120,9 +121,9 @@ expressionList
 statementExpression
     :   expression
     ;
-textStatment:   //表达式输出
-       LEFT_TOKEN textVar RIGHT_TOKEN
-      |      LEFT_TOKEN NOT LEFT_PAR textVar RIGHT_PAR RIGHT_TOKEN ;
+textStatment:   //表达式输�?
+         LEFT_TOKEN NOT LEFT_PAR textVar RIGHT_PAR RIGHT_TOKEN 
+      |    LEFT_TOKEN textVar RIGHT_TOKEN;
 textVar	
 :	b=expression  (COMMA textformat)?
 ;
@@ -155,11 +156,11 @@ constantExpression
     |   expression OR expression    #orExp
     |   expression QUESTOIN expression? COLON? expression?  #ternaryExp
     |   LEFT_PAR expression RIGHT_PAR #parExp
-  
+    |   generalAssignExp  #assignGeneralInExp 
     ;
     
-
- varRef:Identifier ( varAttribute)*  (safe_output)?
+generalAssignExp: varRef ASSIN expression ;
+varRef:Identifier ( varAttribute)*  (safe_output)?
 ;
 varAttribute :PERIOD Identifier   #varAttributeGeneral
              | VIRTUAL Identifier #varAttributeVirtual

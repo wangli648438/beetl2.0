@@ -32,6 +32,7 @@ import java.lang.reflect.Method;
 
 import org.beetl.core.Context;
 import org.beetl.core.exception.BeetlException;
+import org.beetl.core.om.ObjectUtil;
 
 /**
  * 对单个native方法的封装
@@ -42,10 +43,11 @@ public class SingleFunctionWrapper extends FunctionWrapper
 {
 	Method m;
 
-	public SingleFunctionWrapper(String funName, Object target, Method m)
+	public SingleFunctionWrapper(String funName, Class cls, Object target, Method m)
 	{
 		super(funName);
 		this.target = target;
+		this.cls = cls;
 		this.m = m;
 		this.requiredContext = this.checkContextRequried(m.getParameterTypes());
 
@@ -58,15 +60,31 @@ public class SingleFunctionWrapper extends FunctionWrapper
 		{
 			if (!this.requiredContext)
 			{
-				Object result = m.invoke(target, paras);
-				return result;
+				if (target != null)
+				{
+					return ObjectUtil.invokeObject(this.target, m.getName(), paras);
+
+				}
+				else
+				{
+					return ObjectUtil.invokeStatic(this.cls, m.getName(), paras);
+				}
+
 			}
 			else
 			{
-				Object[] newParas = new Object[paras.length + 1];
-				System.arraycopy(paras, 0, newParas, 0, paras.length);
-				newParas[paras.length] = ctx;
-				return m.invoke(target, newParas);
+
+				Object[] newParas = getContextParas(paras, ctx);
+				if (target != null)
+				{
+					return ObjectUtil.invokeObject(this.target, m.getName(), newParas);
+
+				}
+				else
+				{
+					return ObjectUtil.invokeStatic(this.cls, m.getName(), newParas);
+				}
+
 			}
 
 		}
@@ -83,6 +101,10 @@ public class SingleFunctionWrapper extends FunctionWrapper
 						+ this.functionName, t);
 				throw be;
 			}
+		}
+		catch (BeetlException ex)
+		{
+			throw ex;
 		}
 		catch (Exception ex)
 		{

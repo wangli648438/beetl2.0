@@ -3,8 +3,12 @@ package org.beetl.core.nativecall;
 import java.util.List;
 
 import org.beetl.core.BasicTestCase;
+import org.beetl.core.Configuration;
+import org.beetl.core.GroupTemplate;
 import org.beetl.core.Template;
 import org.beetl.core.User;
+import org.beetl.core.nativecall.obj.Request;
+import org.beetl.core.resource.StringTemplateResourceLoader;
 import org.testng.AssertJUnit;
 import org.testng.annotations.Test;
 
@@ -104,6 +108,36 @@ public class NativeTest extends BasicTestCase
 		this.bind(t, "test", test);
 		str = t.render();
 		AssertJUnit.assertEquals(this.getFileContent("/nat/object_expected.html"), str);
+	}
+
+	@Test
+	public void testPrivateMethodCall() throws Exception
+	{
+
+		Template t = gt.getTemplate("/nat/nat_private_method_template.html");
+		this.bind(t, "test", Request.getRequest());
+		String str = t.render();
+		AssertJUnit.assertEquals(this.getFileContent("/nat/nat_private_method_expected.html"), str);
+
+		t = gt.getTemplate("/nat/nat_private_method_template.html");
+		this.bind(t, "test", Request.getRequest());
+		str = t.render();
+		AssertJUnit.assertEquals(this.getFileContent("/nat/nat_private_method_expected.html"), str);
+	}
+	
+	
+	@Test
+	public void testSecurity() throws Exception
+	{
+
+		StringTemplateResourceLoader resourceLoader = new StringTemplateResourceLoader();
+		Configuration cfg = Configuration.defaultConfiguration();
+		GroupTemplate gt = new GroupTemplate(resourceLoader, cfg);
+		Template t = gt.getTemplate("hello,${@java.lang.System.currentTimeMillis()}");
+	
+		String str = t.render();
+		AssertJUnit.assertEquals("hello,", str);
+	
 	}
 
 	public String getText()

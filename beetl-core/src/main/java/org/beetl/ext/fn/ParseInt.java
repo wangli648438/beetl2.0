@@ -36,7 +36,6 @@ import org.beetl.core.Function;
 /**
  * 
  * @author 张健川 dlut.zjc@gmail.com
- * @create 2014-04-16
  */
 public class ParseInt implements Function
 {
@@ -47,6 +46,8 @@ public class ParseInt implements Function
 		Object o = paras[0];
 		String str = "";
 		int result;
+		if (o == null)
+			throw new NullPointerException("Error:parseInt(null)");
 		if (o instanceof Number)
 		{
 			long n = ((Number) o).longValue();

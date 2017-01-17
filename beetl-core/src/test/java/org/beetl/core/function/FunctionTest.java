@@ -80,4 +80,5 @@ public class FunctionTest extends BasicTestCase
 		AssertJUnit.assertEquals(this.getFileContent("/function/tojson_expected.html"), str);
 
 	}
+
 }

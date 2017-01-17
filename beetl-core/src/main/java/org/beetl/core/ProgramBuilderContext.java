@@ -38,6 +38,7 @@ import java.util.Set;
 import java.util.TreeMap;
 
 import org.beetl.core.statement.ASTNode;
+import org.beetl.core.statement.GrammarToken;
 import org.beetl.core.statement.IGoto;
 import org.beetl.core.statement.IVarIndex;
 
@@ -100,6 +101,11 @@ public class ProgramBuilderContext
 		this.current.getVars().put(varName, varDesc);
 	}
 
+	/**
+	 * 变量属性，展示没用上，本来想用在ide属性提示
+	 * @param varName
+	 * @param attrName
+	 */
 	public void setVarAttr(String varName, String attrName)
 	{
 		VarDescrption varDesc = findVar(varName);
@@ -110,6 +116,24 @@ public class ProgramBuilderContext
 	{
 		VarDescrption varDesc = findVar(varName);
 		varDesc.where.add(where);
+	}
+
+	protected GrammarToken hasDefined(String varName)
+	{
+		BlockEnvContext scope = current;
+		while (scope != null)
+		{
+			VarDescrption varDesc = scope.getVarDescrption(varName);
+			if (varDesc != null)
+			{
+				return varDesc.where.get(0).token;
+			}
+			else
+			{
+				scope = scope.parent;
+			}
+		}
+		return null;
 	}
 
 	protected VarDescrption findVar(String varName)

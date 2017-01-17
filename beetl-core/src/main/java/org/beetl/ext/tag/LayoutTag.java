@@ -31,9 +31,9 @@ import java.util.Map;
 import java.util.Map.Entry;
 
 import org.beetl.core.BodyContent;
+import org.beetl.core.Resource;
 import org.beetl.core.Tag;
 import org.beetl.core.Template;
-import org.beetl.core.misc.BeetlUtil;
 
 /**
  * 提供一个布局功能，每个页面总是由一定布局，如页面头，菜单，页面脚，以及正文 layout标签允许为正文指定一个布局，如下使用方式
@@ -66,7 +66,7 @@ import org.beetl.core.misc.BeetlUtil;
  * </pre>
  * 
  * 如果向布局传入参数，则可以使用这种格式
- * <p/>
+ * <p></p>
  * layout(path,{'paraName1':value1,'paraName2',value2})
  * 
  * 如果变量layoutContent与模板有冲突，可以作为第三个参数传入到layout变量里，如：
@@ -86,13 +86,13 @@ public class LayoutTag extends Tag
 		{
 			throw new RuntimeException("参数错误，期望child,map");
 		}
-		String layoutFile = BeetlUtil.getRelPath(ctx.getResourceId(), (String) args[0]);
+		String layoutFile = getRelResourceId();
 		Template t = this.gt.getTemplate(layoutFile, this.ctx.getResourceId());
 
 		t.binding(ctx.globalVar);
 		t.dynamic(ctx.objectKeys);
 
-		if (args.length == 2)
+		if (args.length >= 2)
 		{
 			Map<String, Object> map = (Map<String, Object>) args[1];
 			for (Entry<String, Object> entry : map.entrySet())
@@ -112,6 +112,14 @@ public class LayoutTag extends Tag
 			t.binding(defaultLayoutName, content);
 		}
 		t.renderTo(ctx.byteWriter);
+
+	}
+
+	protected String getRelResourceId()
+	{
+
+		Resource sibling = ctx.getResource();
+		return gt.getResourceLoader().getResourceId(sibling, (String) this.args[0]);
 
 	}
 

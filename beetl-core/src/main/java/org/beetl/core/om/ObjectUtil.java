@@ -36,6 +36,7 @@ import static org.beetl.core.om.ObjectMethodMatchConf.INT_CONVERT;
 import static org.beetl.core.om.ObjectMethodMatchConf.LONG_CONVERT;
 import static org.beetl.core.om.ObjectMethodMatchConf.NO_CONVERT;
 import static org.beetl.core.om.ObjectMethodMatchConf.SHORT_CONVERT;
+import static org.beetl.core.om.ObjectMethodMatchConf.VARIABLE_ARRAY;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -52,6 +53,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import org.beetl.core.exception.BeetlException;
 import org.beetl.core.exception.BeetlParserException;
+import org.beetl.core.misc.BeetlUtil;
 
 /**
  * java对象一些操作util类，并缓存一些中间结果以提高性能
@@ -60,7 +62,7 @@ import org.beetl.core.exception.BeetlParserException;
  */
 public class ObjectUtil
 {
-	static Map<String, MethodInvoker> methodInvokerCache = new ConcurrentHashMap<String, MethodInvoker>();
+	public static Map<Class, Map<String,MethodInvoker>> methodInvokerCache = new ConcurrentHashMap<Class, Map<String,MethodInvoker>>();
 	//	static Map<Class, Method[]> cacheClassMethodMap = new ConcurrentHashMap<Class, Method[]>();
 	public static Map<Class, ObjectInfo> cachedClassInfoMap = new ConcurrentHashMap<Class, ObjectInfo>();
 	public static Object[] EMPTY_OBJECT_ARRAY = new Object[0];
@@ -106,6 +108,7 @@ public class ObjectUtil
 	 * 遵循javabean规范
 	 * @param attrName
 	 * @return
+	 * @deprecated 并不遵循java规范
 	 */
 	public static String getGetMethod(String attrName)
 	{
@@ -118,6 +121,7 @@ public class ObjectUtil
 	 * 遵循javabean规范
 	 * @param attrName
 	 * @return
+	 * @deprecated 并不遵循java规范
 	 */
 	public static String getSetMethod(String attrName)
 	{
@@ -130,6 +134,7 @@ public class ObjectUtil
 	 * 遵循javabean规范
 	 * @param attrName
 	 * @return
+	 * @deprecated 并不遵循java规范
 	 */
 	public static String getIsMethod(String attrName)
 	{
@@ -146,44 +151,90 @@ public class ObjectUtil
 	public static MethodInvoker getInvokder(Class c, String name)
 	{
 		//先检测 get，然后 is，然后是general get
-
-		String key = c.toString().concat("_").concat(name);
-		MethodInvoker invoker = methodInvokerCache.get(key);
-		if (invoker != null)
-		{
-			return invoker;
+//性能慢，但需要证,重要的是，类重加载后，根据字符串知道method，是错误的
+//		String key = c.toString().concat("_").concat(name); 
+		MethodInvoker invoker = null;
+		Map<String,MethodInvoker> map = methodInvokerCache.get(c);
+		if(map!=null){
+			invoker = map.get(name);
+			if (invoker != null)
+			{
+				return invoker;
+			}
 		}
+		
 		//try get
 		String methodName = getGetMethod(name);
 		Method method = getGetMethod(c, methodName, null);
 		if (method != null)
 		{
 			invoker = new PojoMethodInvoker(method);
+			
 		}
-		else
-		{
-			methodName = getIsMethod(name);
-			method = getGetMethod(c, methodName, null);
+		
+		//try is 
+		if(invoker==null){			
+			if(name.startsWith("is")){
+				methodName = name;
+				method = getGetMethod(c, methodName, null);
+				if(method!=null){
+					invoker = new PojoMethodInvoker(method);
+				}
+			}else{
+				methodName = getIsMethod(name);
+				method = getGetMethod(c, methodName, null);
+				if(method!=null){
+					invoker = new PojoMethodInvoker(method);
+				}
+			}
+	
+		}
+		
+		//bug fix:java bean 规范  cName--> getcName()
+		if(invoker==null){
+			if(name.length()>1&&(name.charAt(1)>='A'&&name.charAt(1)<='Z')){				
+				methodName = "get"+name;
+				method = getGetMethod(c, methodName, null);
+				if(method!=null){
+					invoker = new PojoMethodInvoker(method);
+				}else{
+					methodName = "is"+name;
+					method = getGetMethod(c, methodName, null);
+					if(method!=null){
+						invoker = new PojoMethodInvoker(method);
+					}
+				}
+				
+			}
+		}
+		
+		// general get,string objct allow
+		if(invoker==null){
+			method = getGetMethod(c, "get", new Class[]
+					{ Object.class });
 			if (method != null)
 			{
-				invoker = new PojoMethodInvoker(method);
-			}
-			else
-			{
+				invoker = new GeneralGetMethodInvoker(method, name);
+			}else{
 				method = getGetMethod(c, "get", new Class[]
-				{ String.class });
-				if (method != null)
-				{
+						{ String.class });
+				if(method!=null){
 					invoker = new GeneralGetMethodInvoker(method, name);
 				}
 			}
-
+			
 		}
-
+		
+		
+		
+		
 		if (invoker != null)
 		{
-			methodInvokerCache.put(key, invoker);
-
+			if(map==null){
+				map = new ConcurrentHashMap<String,MethodInvoker>();
+				methodInvokerCache.put(c, map);
+			}
+			map.put(name, invoker);
 			return invoker;
 		}
 		else
@@ -220,7 +271,7 @@ public class ObjectUtil
 		}
 	}
 
-	/**看给定的参数是否匹配给定方法的前parameterCount参数 
+	/**看给定的参数是否匹配给定方法的参数 
 	 * @param method 
 	 * @param paras 输入的参数
 	 * @return 如果不为null，则匹配，其包含了匹配信息
@@ -228,12 +279,27 @@ public class ObjectUtil
 	public static ObjectMethodMatchConf match(Method method, Class[] paras)
 	{
 		Class[] metodParaTypes = method.getParameterTypes();
-		if (paras.length != metodParaTypes.length)
+		if (paras.length < metodParaTypes.length)
 		{
+
 			return null;
 		}
-		int parameterCount = metodParaTypes.length;
-		int[] convert = new int[parameterCount];
+		else if (paras.length == metodParaTypes.length)
+		{
+			//精确匹配或者可变参数
+		}
+		else if (paras.length > metodParaTypes.length && metodParaTypes.length != 0
+				&& metodParaTypes[metodParaTypes.length - 1].isArray())
+		{
+			//可变参数，
+		}
+		else
+		{
+			//不匹配
+			return null;
+		}
+
+		int[] convert = new int[metodParaTypes.length];
 
 		for (int j = 0; j < paras.length; j++)
 		{
@@ -368,6 +434,32 @@ public class ObjectUtil
 					continue;
 				}
 			}
+			else if (metodParaTypes[j].isArray())
+			{
+
+				if (paras[j].isArray())
+				{
+					Class metodParaTypeComponent = metodParaTypes[j].getComponentType();
+					Class paraTypeComponent = paras[j].getComponentType();
+					if (metodParaTypeComponent == paraTypeComponent)
+					{
+						//不做转化了
+						convert[j] = NO_CONVERT;
+						continue;
+					}
+					return null;
+				}
+				else if (j == metodParaTypes.length - 1)
+				{
+					convert[j] = VARIABLE_ARRAY;
+					break;
+				}
+				else
+				{
+					return null;
+				}
+
+			}
 
 			return null;
 
@@ -383,7 +475,7 @@ public class ObjectUtil
 				break;
 			}
 		}
-
+		mc.method.setAccessible(true);
 		return mc;
 
 	}
@@ -406,12 +498,12 @@ public class ObjectUtil
 		int i = 0;
 		for (Object para : paras)
 		{
-			parameterType[i++] = para.getClass();
+			parameterType[i++] = para == null ? null : para.getClass();
 		}
 		ObjectMethodMatchConf mf = findMethod(target, methodName, parameterType);
 		if (mf == null)
 		{
-			throw new BeetlParserException(BeetlParserException.NATIVE_CALL_INVALID, "根据参数未找到匹配的方法");
+			throw new BeetlParserException(BeetlParserException.NATIVE_CALL_INVALID, "根据参数未找到匹配的方法"+methodName+BeetlUtil.getParameterDescription(parameterType));
 		}
 		Object result = invoke(o, mf, paras);
 		return result;
@@ -442,31 +534,21 @@ public class ObjectUtil
 
 	}
 
-	private static Object invoke(Object o, ObjectMethodMatchConf conf, Object[] paras) throws IllegalAccessException,
+	public static Object invoke(Object o, ObjectMethodMatchConf conf, Object[] paras) throws IllegalAccessException,
 			IllegalArgumentException, InvocationTargetException
 	{
 
-		Object[] targets = null;
-		if (conf.isNeedConvert)
-		{
-			targets = new Object[paras.length];
-			for (int i = 0; i < paras.length; i++)
-			{
-				targets[i] = conf.convert(paras[i], i);
-			}
-		}
-		else
-		{
-			targets = paras;
-		}
+		Object[] targets = conf.convert(paras);
+
 		if (o == null)
 		{
 			//check static 
 			if (!Modifier.isStatic(conf.method.getModifiers()))
 			{
-				throw new BeetlException(BeetlException.NATIVE_CALL_INVALID, "该方法是非静态方法，不能静态形式调用");
+				throw new BeetlException(BeetlException.NULL, "该方法是非静态方法，不能静态形式调用");
 			}
 		}
+		conf.method.setAccessible(true);
 		return conf.method.invoke(o, targets);
 	}
 
@@ -545,6 +627,22 @@ public class ObjectUtil
 		catch (ClassNotFoundException e)
 		{
 			throw new RuntimeException(e);
+		}
+	}
+
+	/** 实例化一个类，如果不成功，返回null
+	 * @param clsName
+	 * @return
+	 */
+	public static Object tryInstance(String clsName)
+	{
+		try
+		{
+			return instance(clsName);
+		}
+		catch (Exception ex)
+		{
+			return null;
 		}
 	}
 

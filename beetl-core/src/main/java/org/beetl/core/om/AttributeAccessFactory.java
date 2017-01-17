@@ -28,11 +28,13 @@
 package org.beetl.core.om;
 
 import java.lang.reflect.Method;
-import java.util.HashMap;
+import java.lang.reflect.Modifier;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.concurrent.ConcurrentHashMap;
 
+import org.beetl.core.GroupTemplate;
 import org.beetl.core.exception.BeetlException;
 
 /**
@@ -50,8 +52,8 @@ public class AttributeAccessFactory
 {
 
 	// 已经为属性生成的访问代理类
-	static Map<String, AttributeAccess> pojoCache = new HashMap<String, AttributeAccess>();
-	static Map<String, AttributeAccess> generalGetCache = new HashMap<String, AttributeAccess>();
+	static Map<String, AttributeAccess> pojoCache = new ConcurrentHashMap<String, AttributeAccess>();
+	static Map<String, AttributeAccess> generalGetCache = new ConcurrentHashMap<String, AttributeAccess>();
 
 	public static MapAA mapAA = new MapAA();
 	public static ListAA listAA = new ListAA();
@@ -59,7 +61,7 @@ public class AttributeAccessFactory
 	public static ObjectAA objectAA = new ObjectAA();
 	public static MapEntryAA mapEntryAA = new MapEntryAA();
 
-	static public AttributeAccess buildFiledAccessor(Class c, String attrExp)
+	static public AttributeAccess buildFiledAccessor(Class c, String attrExp,GroupTemplate gt)
 	{
 
 		if (c == Object.class)
@@ -93,71 +95,111 @@ public class AttributeAccessFactory
 		}
 
 		String name = (String) attrExp;
-		String className = c + "$_$" + name;
+		String className = c + "_" + name;
 		AttributeAccess aa = pojoCache.get(className);
 		if (aa != null)
 			return aa;
 
+		//生成虚拟机代码的时候，类必须是可以被访问的，所以得找到可被访问的类
 		FindResult pojoResult = findCommonInterfaceOrClass(c, name);
 		if (pojoResult != null)
 		{
-			className = pojoResult.c + "$_$" + name;
-			aa = pojoCache.get(className);
-			if (aa != null)
-			{
-				return aa;
-			}
-			else
-			{
-				aa = AttributeCodeGen.createAAClass(pojoResult.c, name, pojoResult.realMethodName,
-						pojoResult.returnType);
+			if(!pojoResult.realMethodName.equals("get")){
+				className = pojoResult.c + "_" + name;
+				aa = pojoCache.get(className);
+				if (aa != null)
+				{
+					return aa;
+				}
+				else
+				{
+					synchronized (pojoResult.c)
+					{
+						aa = pojoCache.get(className);
+						if (aa != null)
+							return aa;
+						aa = AttributeCodeGen.createAAClass(pojoResult.c, name, pojoResult.realMethodName,
+								pojoResult.returnType,gt);
 
-				pojoCache.put(className, aa);
-				return aa;
+						pojoCache.put(className, aa);
+						return aa;
+					}
 
-			}
+				}
+			}else{
+				// General Get
+				className = c + "_get";
+				aa = generalGetCache.get(className);
+				if (aa != null)
+				{
+					return aa;
+				}else
+				{
+						
+						synchronized (c)
+						{
+							aa = generalGetCache.get(className);
+							if (aa != null)
+								return aa;
+							
+							aa = AttributeCodeGen.createAAClass(c, "get", "get", pojoResult.returnType, pojoResult.parameter,gt);
+							generalGetCache.put(className, aa);
+							return aa;
+						}
+
+					}
+				
+				}
+		
+			
 
 		}
 		else
 		{
-			// General Get
-			className = c + "$_" + name;
-			aa = generalGetCache.get(className);
-			if (aa != null)
-			{
-				return aa;
-			}
-			else
-			{
-				FindResult generaGetResult = findResult(c, "get", "get");
-				if (generaGetResult != null)
-				{
-					aa = AttributeCodeGen.createAAClass(generaGetResult.c, "get", "get", Object.class);
-					generalGetCache.put(className, aa);
-				}
-				else
-				{
-					// 还是没有找到，抛错吧
-					BeetlException be = new BeetlException(BeetlException.ATTRIBUTE_NOT_FOUND, name);
-					throw be;
-				}
-			}
+			return objectAA;
+			// 还是没有找到，抛错吧
+//			BeetlException be = new BeetlException(BeetlException.ATTRIBUTE_NOT_FOUND, attrExp);
+//			throw be;
 
 		}
-
-		return aa;
 
 	}
 
 	public static FindResult findCommonInterfaceOrClass(Class c, String name)
 	{
+		
+		Method m = ObjectUtil.getInvokder(c, name).getMethod();
+		String methodName = m.getName();
+		if(methodName.equals("get")){
+			//general get
+			FindResult findResult  = new FindResult();
+			findResult.parameter = m.getParameterTypes()[0];
+			findResult.realMethodName="get";
+			findResult.c = c ;
+			findResult.returnType = m.getReturnType();
+			return findResult;
+		}else{
+			if(Modifier.isPublic(c.getModifiers())){
+				FindResult result = new FindResult();
+				result.realMethodName = m.getName();
+				result.c = c;
+				result.returnType = m.getReturnType();
+				Class[] para = m.getParameterTypes();
+				result.parameter = para.length==0?null:para[1];
+				return result;
+			}else{
+				// c 可能是一个私有类，但实现了public 接口，在生成字节码的时候必须考虑类的可访问性，因此去找public 父类或者接口
+				FindResult findResult = findResult(c,methodName );
+				return findResult;
+			}
+			
+			
+		}
 
-		FindResult findResult = findResult(c, ObjectUtil.getGetMethod(name), ObjectUtil.getIsMethod(name));
-		return findResult;
 
 	}
 
-	private static FindResult findResult(Class c, String getName, String isName)
+	private static FindResult findResult(Class c, String getName)
 	{
 		FindResult result = null;
 		Method[] methods = c.getMethods();
@@ -173,72 +215,83 @@ public class AttributeAccessFactory
 				findMethod = m;
 				break;
 			}
-			else if (name.equals(isName))
-			{
-				findMethod = m;
-				break;
-			}
+		
 		}
-		// 判断父接口
-		Class[] interfaces = c.getInterfaces();
-		for (Class inc : interfaces)
+		
+		if (findMethod != null&&Modifier.isPublic(c.getModifiers()))
 		{
-			if (inc.getName().startsWith("java."))
-			{
-				// java包不需要考虑
-				continue;
-			}
-			result = findResult(inc, getName, isName);
-			if (result != null)
-			{
-				resetFindResult(findMethod, result);
-			}
-		}
 
-		Class parent = c.getSuperclass();
-		if (parent != null && !parent.getName().startsWith("java."))
-		{
-			result = findResult(parent, getName, isName);
-			if (result != null)
-			{
-				resetFindResult(findMethod, result);
-				return result;
-			}
-		}
-
-		if (findMethod != null)
-		{
 			result = new FindResult();
 			result.realMethodName = findMethod.getName();
 			result.c = c;
 			result.returnType = findMethod.getReturnType();
+			Class[] para = findMethod.getParameterTypes();
+			result.parameter = para.length==0?null:para[1];
+			
 			return result;
 		}
-		else
+		
+		
+		// 判断父接口
+		Class[] interfaces = c.getInterfaces();
+		for (Class inc : interfaces)
 		{
-			return null;
+			if (Modifier.isPublic(inc.getModifiers()))
+			{
+
+				if (inc.getName().startsWith("java."))
+				{
+					// java包不需要考虑
+					continue;
+				}
+
+				result = findResult(inc, getName);
+				if (result != null)
+				{
+//					resetFindResult(findMethod, result);
+					return result;
+				}
+			}
+
 		}
+
+		Class parent = c.getSuperclass();
+		if (parent != null && Modifier.isPublic(parent.getModifiers()) && !parent.getName().startsWith("java."))
+		{
+			result = findResult(parent, getName);
+			if (result != null)
+			{
+//				resetFindResult(findMethod, result);
+				return result;
+			}
+		}
+		
+
+		return null;
 
 	}
-
+	
+	
+	
 	private static void resetFindResult(Method m, FindResult parent)
 	{
-		if (m.getReturnType() == parent.returnType)
-		{
-			return;
-		}
-		else
-		{
-			// 和父接口不一致，模型比较复杂类型推测很难，统一改成Object
-			parent.returnType = Object.class;
-		}
+//		if (m.getReturnType() == parent.returnType)
+//		{
+//			return;
+//		}
+//		else
+//		{
+//			// 和父接口不一致，模型比较复杂类型推测很难，统一改成Object
+//			parent.returnType = Object.class;
+//		}
 	}
 
 	static class FindResult
 	{
-
+		
 		String realMethodName;
 		Class c;
 		Class returnType;
+		Class parameter;
 	}
 }

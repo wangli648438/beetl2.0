@@ -34,6 +34,7 @@ import java.util.Map.Entry;
 import java.util.Set;
 
 import org.beetl.core.Context;
+import org.beetl.core.exception.BeetlException;
 import org.beetl.core.om.ObjectUtil;
 
 /**
@@ -92,9 +93,14 @@ public class ProgramMetaData implements java.io.Serializable
 	public Set<String> dynamicObjectSet = new HashSet<String>(0);
 
 	/**
-	 * @type(User cc,List<User> list)  对应的描述
+	 * <pre>
+	 * type(User cc,List &lt;User &gt; list)  
+	 * </pre>
+	 * 对应的描述
 	 */
 	public Map<String, Type> globalType = new HashMap<String, Type>(0);
+
+	public Map<String, AjaxStatement> ajaxs = null;
 
 	/**
 	 * 模板里的顶级变量映射关系
@@ -113,8 +119,9 @@ public class ProgramMetaData implements java.io.Serializable
 
 		// 临时标量所在空间
 		ctx.tempVarStartIndex = tempVarStartIndex;
-		// 分配变量空间
-		ctx.vars = new Object[varIndexSize];
+		// 分配变量空间,最后一个为模板的返回值
+		ctx.vars = new Object[varIndexSize + 1];
+		ctx.vars[varIndexSize] = Context.NOT_EXIST_OBJECT;
 
 		// 将全局变量放到数组
 		putGlobaToArray(ctx);
@@ -124,7 +131,7 @@ public class ProgramMetaData implements java.io.Serializable
 	/**
 	 * 将模板全局变量转为数组
 	 * 
-	 * @param map
+	 * @param ctx
 	 */
 	protected void putGlobaToArray(Context ctx)
 	{
@@ -177,6 +184,18 @@ public class ProgramMetaData implements java.io.Serializable
 	public void setTemplateRootScopeIndexMap(Map<String, Integer> templateRootScopeIndexMap)
 	{
 		this.templateRootScopeIndexMap = templateRootScopeIndexMap;
+	}
+
+	public AjaxStatement getAjax(String anchor)
+	{
+
+		if (ajaxs == null)
+		{
+			BeetlException be = new BeetlException(BeetlException.AJAX_NOT_FOUND, "该模板文件没有发现任何ajax锚点");
+			be.pushToken(new GrammarToken(anchor, 0, 0));
+			throw be;
+		}
+		return ajaxs.get(anchor);
 	}
 
 }

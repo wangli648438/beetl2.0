@@ -17,6 +17,8 @@ public final class PlaceholderST extends Statement
 	public Expression expression;
 	public Type type = null;
 	FormatExpression format;
+	//用户定义输出
+	public static Output output = null;
 
 	public PlaceholderST(Expression exp, FormatExpression format, GrammarToken token)
 	{
@@ -35,6 +37,10 @@ public final class PlaceholderST extends Statement
 			if (format != null)
 			{
 				value = format.evaluateValue(value, ctx);
+			}
+			if(output!=null){
+				output.write(ctx, value);
+				return ;
 			}
 			if (value != null)
 			{
@@ -65,7 +71,7 @@ public final class PlaceholderST extends Statement
 						}
 						else if (c == Float.class)
 						{
-							ctx.byteWriter.writeDouble((Double) value);
+							ctx.byteWriter.writeFloat((Float) value);
 							return;
 						}
 						else if (c == Short.class)
@@ -82,7 +88,7 @@ public final class PlaceholderST extends Statement
 		}
 		catch (IOException e)
 		{
-			BeetlException be = new BeetlException(BeetlException.CLIENT_IO_ERROR_ERROR, "Client IO Error", e);
+			BeetlException be = new BeetlException(BeetlException.CLIENT_IO_ERROR_ERROR, e.getMessage(), e);
 			be.pushToken(this.token);
 			throw be;
 		}
@@ -96,4 +102,7 @@ public final class PlaceholderST extends Statement
 		this.type = expression.type;
 	}
 
+	public static interface Output{
+		public void write(Context ctx,Object value) throws IOException;
+	}
 }

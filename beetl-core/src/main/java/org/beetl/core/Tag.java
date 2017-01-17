@@ -33,19 +33,18 @@ import org.beetl.core.statement.Statement;
  * 
  * 标签函数，用于处理一段模板快
  * 
- * <p/>
- * &lt;% cache(key){ %>
- * <p/>
+ * <p></p>;
+ * &lt;% cache(key){ %&gt;
+ * <p></p>
  * ip=10.1.1.1
- * <p/>
+ * <p></p>
  * port=9090
- * <p/>
- * &lt;%}%>
+ * <p></p>
+ * &lt;%}&gt;
  * 
- * <p/>
+ * <p></p>
  * 
  * @author joeli
- * @create 2011-5-31
  */
 public abstract class Tag
 {
@@ -65,7 +64,7 @@ public abstract class Tag
 	protected BodyContent getBodyContent()
 	{
 		ByteWriter writer = ctx.byteWriter;
-		ByteWriter tempWriter = ctx.byteWriter.getTempWriter();
+		ByteWriter tempWriter = ctx.byteWriter.getTempWriter(writer);
 		ctx.byteWriter = tempWriter;
 		doBodyRender();
 		ctx.byteWriter = writer;

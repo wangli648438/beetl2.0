@@ -29,6 +29,8 @@ package org.beetl.core;
 
 import java.io.IOException;
 import java.io.Writer;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 
 import org.beetl.core.exception.BeetlException;
 import org.beetl.core.exception.ErrorInfo;
@@ -45,15 +47,34 @@ public class ConsoleErrorHandler implements ErrorHandler
 	{
 
 		ErrorInfo error = new ErrorInfo(ex);
+
+		if (error.getErrorCode().equals(BeetlException.CLIENT_IO_ERROR_ERROR))
+		{
+			//不输出详细提示信息
+			if(!ex.gt.conf.isIgnoreClientIOError){
+				println(writer, "客户端IO异常:" + getResourceName(ex.resourceId) + ":" + error.getMsg());
+				if (ex.getCause() != null)
+				{
+					this.printThrowable(writer, ex.getCause());
+				}
+				return;
+
+			}
+			
+		}
+
 		int line = error.getErrorTokenLine();
-		StringBuilder sb = new StringBuilder(">>").append(error.getType()).append(":")
-				.append(error.getErrorTokenText()).append(" 位于").append(line).append("行").append(" 资源:")
+
+		StringBuilder sb = new StringBuilder(">>").append(this.getDateTime()).append(":").append(error.getType())
+				.append(":").append(error.getErrorTokenText()).append(" 位于").append(line).append("行").append(" 资源:")
 				.append(getResourceName(ex.resourceId));
 
 		if (error.getErrorCode().equals(BeetlException.TEMPLATE_LOAD_ERROR))
 		{
-			sb.append(error.getMsg());
+			if (error.getMsg() != null)
+				sb.append(error.getMsg());
 			println(writer, sb.toString());
+			println(writer,ex.gt.getResourceLoader().getInfo());
 			return;
 		}
 
@@ -64,10 +85,9 @@ public class ConsoleErrorHandler implements ErrorHandler
 		}
 
 		ResourceLoader resLoader = ex.gt.getResourceLoader();
-		//潜在问题，此时可能得到是一个新的模板，不过可能性很小，忽略！
+		//潜在问题，此时可能得到是一个新的模板（开发模式下），不过可能性很小，忽略！
 
 		String content = null;
-		;
 		try
 		{
 			Resource res = resLoader.getResource(ex.resourceId);
@@ -107,6 +127,14 @@ public class ConsoleErrorHandler implements ErrorHandler
 		}
 
 		printCause(error, writer);
+		try
+		{
+			writer.flush();
+		}
+		catch (IOException e)
+		{
+
+		}
 
 	}
 
@@ -156,6 +184,13 @@ public class ConsoleErrorHandler implements ErrorHandler
 		endLine = startLine + 6;
 		return new int[]
 		{ startLine, endLine };
+	}
+
+	protected String getDateTime()
+	{
+		Date date = new Date();
+		SimpleDateFormat sdf = new SimpleDateFormat("hh:mm:ss");
+		return sdf.format(date);
 	}
 
 }

@@ -50,13 +50,17 @@ public class WebAppResourceLoader extends FileResourceLoader
 	}
 
 	/** 
-	 * @param prefix ，前缀，其后的resourceId对应的路径是prefix+"/"+resourceId
+	 * @param root 
 	 */
 	public WebAppResourceLoader(String root)
 	{
 
-		this();
-		this.root = root;
+		if (root != null)
+			this.root = root;
+		else
+		{
+			this.root = BeetlUtil.getWebRoot() + File.separator;
+		}
 
 	}
 
@@ -80,6 +84,12 @@ public class WebAppResourceLoader extends FileResourceLoader
 	{
 		// TODO Auto-generated method stub
 
+	}
+	
+	@Override
+	public String getInfo() {
+		// TODO Auto-generated method stub
+		return "WebAppResourceLoader,Root="+this.root;
 	}
 
 }

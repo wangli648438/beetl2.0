@@ -11,7 +11,9 @@ import org.beetl.core.resource.StringTemplateResourceLoader;
 import org.beetl.ext.fn.GetValueFunction;
 
 /**
- * beetl小工具,加载classpath下的beetl.properties 来配置模板引擎，通常用于测试，或者 性能要求不高的场景 * @author
+ * beetl小工具,加载classpath下的beetl.properties 来配置模板引擎，通常用于简单测试，或者性能要求不高的场景 
+ * 不要用于生产环境
+ * * @author
  * 
  * 
  */
@@ -152,7 +154,6 @@ public class BeetlKit
 
 	/** 执行脚本，和参数，返回脚本里的Root scope的变量
 	 * @param script
-	 * @param paras
 	 * @return
 	 */
 	public static Map executeAndReturnRootScopeVars(String script)
@@ -187,8 +188,6 @@ public class BeetlKit
 	 *            模板内容
 	 * @param initValue
 	 *            模板初始化值
-	 * @param console
-	 *            模板的输出
 	 * @return 模板渲染结果
 	 */
 	public static String testTemplate(String template, String initValue)

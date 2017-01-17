@@ -34,6 +34,7 @@ import org.beetl.core.GroupTemplate;
 import org.beetl.core.Resource;
 import org.beetl.core.ResourceLoader;
 import org.beetl.core.fun.FileFunctionWrapper;
+import org.beetl.core.misc.BeetlUtil;
 
 /** 文件模板加载器
  * @author joelli
@@ -45,8 +46,8 @@ public class FileResourceLoader implements ResourceLoader
 	String root = null;
 	String charset = "UTF-8";
 	boolean autoCheck = false;
-	String functionRoot = "functions";
-	String functionSuffix = "html";
+	String functionRoot = "funtion";
+	String functionSuffix = "fn";
 	GroupTemplate gt = null;
 
 	public FileResourceLoader()
@@ -143,43 +144,42 @@ public class FileResourceLoader implements ResourceLoader
 			this.charset = resourceMap.get("charset");
 
 		}
-		if (this.functionSuffix == null)
-		{
-			this.functionSuffix = resourceMap.get("functionSuffix");
-		}
-
+		this.functionSuffix = resourceMap.get("functionSuffix");
 		this.autoCheck = Boolean.parseBoolean(resourceMap.get("autoCheck"));
-
+		this.functionRoot = resourceMap.get("functionRoot");
 		File root = new File(this.root, this.functionRoot);
 		this.gt = gt;
 		if (root.exists())
 		{
-			readFuntionFile(root, "", "/".concat(functionRoot).concat("/"));
+			String ns = "";
+			String path = "/".concat(this.functionRoot).concat("/");
+			BeetlUtil.autoFileFunctionRegister(gt, root, ns, path, this.functionSuffix);
+			
 		}
 
 	}
 
-	protected void readFuntionFile(File funtionRoot, String ns, String path)
+	
+	@Override
+	public boolean exist(String key)
 	{
-		String expected = ".".concat(this.functionSuffix);
-		File[] files = funtionRoot.listFiles();
-		for (File f : files)
-		{
-			if (f.isDirectory())
-			{
-				//读取子目录
-				readFuntionFile(f, f.getName().concat("."), path.concat(f.getName()).concat("/"));
-			}
-			else if (f.getName().endsWith(functionSuffix))
-			{
-				String resourceId = path + f.getName();
-				String fileName = f.getName();
-				fileName = fileName.substring(0, (fileName.length() - functionSuffix.length() - 1));
-				String functionName = ns.concat(fileName);
-				FileFunctionWrapper fun = new FileFunctionWrapper(resourceId);
-				gt.registerFunction(functionName, fun);
-			}
-		}
+		// TODO Auto-generated method stub
+		return new File(root, key).exists();
+	}
+
+	@Override
+	public String getResourceId(Resource resource, String id)
+	{
+		if (resource == null)
+			return id;
+		else
+			return BeetlUtil.getRelPath(resource.getId(), id);
+	}
+
+	@Override
+	public String getInfo() {
+		// TODO Auto-generated method stub
+		return "FileResourceLoader,Root="+this.root;
 	}
 
 }

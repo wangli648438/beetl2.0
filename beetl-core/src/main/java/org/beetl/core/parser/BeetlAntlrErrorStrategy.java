@@ -27,6 +27,10 @@
  */
 package org.beetl.core.parser;
 
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+
 import org.antlr.v4.runtime.DefaultErrorStrategy;
 import org.antlr.v4.runtime.FailedPredicateException;
 import org.antlr.v4.runtime.InputMismatchException;
@@ -48,6 +52,33 @@ import org.beetl.core.statement.GrammarToken;
  */
 public class BeetlAntlrErrorStrategy extends DefaultErrorStrategy
 {
+	
+	static HashSet<String> keys = new HashSet<String>();
+	static Map<String,String> expects = new HashMap<String,String>();
+	static{
+		expects.put("LEFT_PAR", "(");
+		expects.put("RIGHT_PAR", ")");
+		
+	}
+	static {
+		keys.add("select");
+		keys.add("if");
+		keys.add("for");
+		keys.add("elsefor");
+		keys.add("while");
+		keys.add("switch");
+		keys.add("return");
+		keys.add("break");
+		keys.add("var");
+		keys.add("continue");
+		keys.add("directive");
+		keys.add("in");
+		keys.add("case");
+		keys.add("default");
+		keys.add("try");
+		keys.add("catch");
+		
+	}
 	@Override
 	public void recover(Parser recognizer, RecognitionException e)
 	{
@@ -83,7 +114,9 @@ public class BeetlAntlrErrorStrategy extends DefaultErrorStrategy
 		{
 			//			System.err.println("unknown recognition error type: " + e.getClass().getName());
 			BeetlException exception = new BeetlException(BeetlException.PARSER_UNKNOW_ERROR, e.getClass().getName(), e);
-			exception.token = this.getGrammarToken(e.getOffendingToken());
+			//			exception.token = this.getGrammarToken(e.getOffendingToken());
+			exception.pushToken(this.getGrammarToken(e.getOffendingToken()));
+
 			throw exception;
 		}
 	}
@@ -103,10 +136,18 @@ public class BeetlAntlrErrorStrategy extends DefaultErrorStrategy
 		{
 			input = "<未知输入>";
 		}
+		BeetlException exception = null;
+		if(keys.contains(e.getOffendingToken().getText())){
+			 exception = new BeetlParserException(BeetlException.PARSER_VIABLE_ERROR,
+						"不允许"+e.getOffendingToken().getText()+"关键出现在这里"+":"+escapeWSAndQuote(input), e);
+		}else{
+			exception = new BeetlParserException(BeetlException.PARSER_VIABLE_ERROR,
+					escapeWSAndQuote(input), e);
+		}
 		//		String msg = "no viable alternative at input " + escapeWSAndQuote(input);
-		BeetlException exception = new BeetlParserException(BeetlException.PARSER_VIABLE_ERROR,
-				escapeWSAndQuote(input), e);
-		exception.token = this.getGrammarToken(e.getOffendingToken());
+	
+		exception.pushToken(this.getGrammarToken(e.getOffendingToken()));
+
 		throw exception;
 	}
 
@@ -115,7 +156,9 @@ public class BeetlAntlrErrorStrategy extends DefaultErrorStrategy
 		String msg = "缺少输入 " + getTokenErrorDisplay(e.getOffendingToken()) + " 期望 "
 				+ e.getExpectedTokens().toString(recognizer.getTokenNames());
 		BeetlException exception = new BeetlParserException(BeetlException.PARSER_MISS_ERROR, msg, e);
-		exception.token = this.getGrammarToken(e.getOffendingToken());
+		//		exception.token = this.getGrammarToken(e.getOffendingToken());
+		exception.pushToken(this.getGrammarToken(e.getOffendingToken()));
+
 		throw exception;
 
 	}
@@ -124,7 +167,9 @@ public class BeetlAntlrErrorStrategy extends DefaultErrorStrategy
 	{
 		String ruleName = recognizer.getRuleNames()[recognizer.getContext().getRuleIndex()];
 		BeetlException exception = new BeetlParserException(BeetlException.PARSER_PREDICATE_ERROR, ruleName, e);
-		exception.token = this.getGrammarToken(e.getOffendingToken());
+		//		exception.token = this.getGrammarToken(e.getOffendingToken());
+		exception.pushToken(this.getGrammarToken(e.getOffendingToken()));
+
 		throw exception;
 	}
 
@@ -159,7 +204,7 @@ public class BeetlAntlrErrorStrategy extends DefaultErrorStrategy
 		// even that didn't work; must throw the exception
 
 		BeetlException exception = new BeetlParserException(BeetlException.PARSER_MISS_ERROR);
-		exception.token = this.getGrammarToken(recognizer.getCurrentToken());
+		exception.pushToken(this.getGrammarToken(recognizer.getCurrentToken()));
 		throw exception;
 		//		
 		//		throw new InputMismatchException(recognizer);
@@ -176,10 +221,21 @@ public class BeetlAntlrErrorStrategy extends DefaultErrorStrategy
 
 		Token t = recognizer.getCurrentToken();
 		IntervalSet expecting = getExpectedTokens(recognizer);
-		String msg = "缺少输入 " + expecting.toString(recognizer.getTokenNames()) + " 在 " + getTokenErrorDisplay(t);
+		String expect = expecting.toString(recognizer.getTokenNames());
+		if(expects.containsKey(expect)){
+			expect = expects.get(expect);
+		}
+		if(expect.equals("'>>'")){
+			expect = "'模板的占位结束符号'";
+		}
+		
+		String tokenStr = getTokenErrorDisplay(t);
+		
+		String msg = "缺少输入 " + expect + " 在 " + tokenStr;
 
 		BeetlException exception = new BeetlParserException(BeetlException.PARSER_MISS_ERROR, msg);
-		exception.token = this.getGrammarToken(t);
+		exception.pushToken(this.getGrammarToken(t));
+		//		exception.token = this.getGrammarToken(t);
 		throw exception;
 	}
 
@@ -197,7 +253,8 @@ public class BeetlAntlrErrorStrategy extends DefaultErrorStrategy
 		IntervalSet expecting = getExpectedTokens(recognizer);
 		String msg = "多余输入 " + tokenName + " 期望 " + expecting.toString(recognizer.getTokenNames());
 		BeetlException exception = new BeetlParserException(BeetlException.PARSER_MISS_ERROR, msg);
-		exception.token = this.getGrammarToken(t);
+		//		exception.token = this.getGrammarToken(t);
+		exception.pushToken(this.getGrammarToken(t));
 		throw exception;
 	}
 

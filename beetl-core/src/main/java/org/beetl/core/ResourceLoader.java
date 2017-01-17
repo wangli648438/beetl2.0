@@ -52,6 +52,8 @@ public interface ResourceLoader
 	 */
 	public boolean isModified(Resource key);
 
+	public boolean exist(String key);
+
 	/**
 	 * 关闭ResouceLoader，通常是GroupTemplate关闭的时候也关闭对应的ResourceLoader
 	 */
@@ -61,5 +63,18 @@ public interface ResourceLoader
 	 * @param gt
 	 */
 	public void init(GroupTemplate gt);
+
+	/**  用于include，layout等根据相对路径计算资源实际的位置.
+	 * @param resource 当前资源
+	 * @param key
+	 * @return
+	 */
+	public String getResourceId(Resource resource, String key);
+	
+	/**
+	 * 得到资源加载器说明，用于获取不到资源的时候输出提示信息
+	 * @return
+	 */
+	public String getInfo();
 
 }

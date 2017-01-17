@@ -33,11 +33,11 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.TreeMap;
 
 import org.antlr.v4.runtime.ParserRuleContext;
 import org.antlr.v4.runtime.Token;
@@ -49,8 +49,10 @@ import org.beetl.core.exception.NativeNotAllowedException;
 import org.beetl.core.om.ObjectAA;
 import org.beetl.core.parser.BeetlParser;
 import org.beetl.core.parser.BeetlParser.AddminExpContext;
+import org.beetl.core.parser.BeetlParser.AjaxStContext;
 import org.beetl.core.parser.BeetlParser.AndExpContext;
-import org.beetl.core.parser.BeetlParser.AssignGeneralContext;
+import org.beetl.core.parser.BeetlParser.AssignGeneralInExpContext;
+import org.beetl.core.parser.BeetlParser.AssignGeneralInStContext;
 import org.beetl.core.parser.BeetlParser.AssignIdContext;
 import org.beetl.core.parser.BeetlParser.AssignMentContext;
 import org.beetl.core.parser.BeetlParser.AssignStContext;
@@ -69,6 +71,7 @@ import org.beetl.core.parser.BeetlParser.ContinueStContext;
 import org.beetl.core.parser.BeetlParser.DirectiveExpContext;
 import org.beetl.core.parser.BeetlParser.DirectiveExpIDListContext;
 import org.beetl.core.parser.BeetlParser.DirectiveStContext;
+import org.beetl.core.parser.BeetlParser.EndContext;
 import org.beetl.core.parser.BeetlParser.ExpressionContext;
 import org.beetl.core.parser.BeetlParser.ExpressionListContext;
 import org.beetl.core.parser.BeetlParser.ForControlContext;
@@ -84,6 +87,7 @@ import org.beetl.core.parser.BeetlParser.FunctionTagStContext;
 import org.beetl.core.parser.BeetlParser.G_caseStatmentContext;
 import org.beetl.core.parser.BeetlParser.G_defaultStatmentContext;
 import org.beetl.core.parser.BeetlParser.G_switchStatmentContext;
+import org.beetl.core.parser.BeetlParser.GeneralAssignExpContext;
 import org.beetl.core.parser.BeetlParser.GeneralForControlContext;
 import org.beetl.core.parser.BeetlParser.IfStContext;
 import org.beetl.core.parser.BeetlParser.IncDecOneContext;
@@ -133,6 +137,7 @@ import org.beetl.core.parser.BeetlParser.VarRefExpContext;
 import org.beetl.core.parser.BeetlParser.VarStContext;
 import org.beetl.core.parser.BeetlParser.WhileStContext;
 import org.beetl.core.statement.ASTNode;
+import org.beetl.core.statement.AjaxStatement;
 import org.beetl.core.statement.AndExpression;
 import org.beetl.core.statement.ArthExpression;
 import org.beetl.core.statement.BlockStatement;
@@ -141,7 +146,9 @@ import org.beetl.core.statement.CompareExpression;
 import org.beetl.core.statement.ContentBodyExpression;
 import org.beetl.core.statement.ContinueStatement;
 import org.beetl.core.statement.DirectiveStatement;
+import org.beetl.core.statement.EndStatement;
 import org.beetl.core.statement.Expression;
+import org.beetl.core.statement.ExpressionRuntime;
 import org.beetl.core.statement.ForStatement;
 import org.beetl.core.statement.FormatExpression;
 import org.beetl.core.statement.FunctionExpression;
@@ -172,11 +179,13 @@ import org.beetl.core.statement.TagVarBindingStatement;
 import org.beetl.core.statement.TernaryExpression;
 import org.beetl.core.statement.TryCatchStatement;
 import org.beetl.core.statement.Type;
+import org.beetl.core.statement.VarAssignExpression;
 import org.beetl.core.statement.VarAssignStatement;
 import org.beetl.core.statement.VarAssignStatementSeq;
 import org.beetl.core.statement.VarAttribute;
 import org.beetl.core.statement.VarDefineNode;
 import org.beetl.core.statement.VarRef;
+import org.beetl.core.statement.VarRefAssignStatement;
 import org.beetl.core.statement.VarSquareAttribute;
 import org.beetl.core.statement.VarVirtualAttribute;
 import org.beetl.core.statement.WhileStatement;
@@ -199,6 +208,8 @@ public class AntlrProgramBuilder
 
 	Expression[] EMPTY_EXPRESSION = new Expression[0];
 	GroupTemplate gt;
+	//多余分号
+	static EndStatement endStatment = new EndStatement();
 
 	public AntlrProgramBuilder(GroupTemplate gt)
 	{
@@ -222,6 +233,12 @@ public class AntlrProgramBuilder
 				ls.add(st);
 			}
 
+		}
+
+		if (pbCtx.current.gotoValue == IGoto.RETURN || pbCtx.current.gotoValue == IGoto.BREAK)
+		{
+			//如果顶级scope也有return 和break，则检测
+			data.hasGoto = true;
 		}
 
 		pbCtx.anzlyszeGlobal();
@@ -267,7 +284,14 @@ public class AntlrProgramBuilder
 		}
 		else if (node instanceof ReturnStContext)
 		{
-			ReturnStatement st = new ReturnStatement(null);
+			ReturnStContext rtnCtx = (ReturnStContext) node;
+			ExpressionContext expCtx = rtnCtx.expression();
+			Expression exp = null;
+			if (expCtx != null)
+			{
+				exp = this.parseExpress(expCtx);
+			}
+			ReturnStatement st = new ReturnStatement(exp, null);
 			pbCtx.current.gotoValue = IGoto.RETURN;
 			return st;
 		}
@@ -371,10 +395,19 @@ public class AntlrProgramBuilder
 
 			return this.parseSelect(selectCtx);
 		}
+		else if (node instanceof AjaxStContext)
+		{
+			return this.parseAjax((AjaxStContext) node);
+		}
+
+		else if (node instanceof EndContext)
+		{
+			return endStatment;
+		}
 
 		else
 		{
-			throw new UnsupportedOperationException();
+			throw new UnsupportedOperationException("未识别，确认模板书写是否正确");
 		}
 
 	}
@@ -419,6 +452,52 @@ public class AntlrProgramBuilder
 		return select;
 	}
 
+	protected AjaxStatement parseAjax(AjaxStContext ajaxCtx)
+	{
+		GrammarToken token = null;
+		String flag = "render";
+		List<TerminalNode>  nodes = ajaxCtx.Identifier();
+		if(nodes.size()==1){
+			token = this.getBTToken(nodes.get(0).getSymbol());
+		}else{
+			token = this.getBTToken(nodes.get(1).getSymbol());
+			flag =  nodes.get(0).getSymbol().getText();
+			if(!(flag.equals("render")||flag.equals("norender"))){
+				BeetlException be = new BeetlException(BeetlException.AJAX_PROPERTY_ERROR,"expect render or norender ,but "+flag);
+				be.pushToken(token);
+				throw be;
+			}
+				
+			
+		}
+		
+		
+		
+		BlockContext blockCtx = ajaxCtx.block();
+
+		BlockStatement block = (BlockStatement) this.parseBlock(blockCtx.statement(), blockCtx);
+
+		AjaxStatement ajaxStat = new AjaxStatement(block, token,flag.equals("render"));
+
+		if (this.data.ajaxs == null)
+		{
+			this.data.ajaxs = new HashMap<String, AjaxStatement>();
+
+		}
+
+		String anchor = ajaxStat.token.text;
+		if (this.data.ajaxs.containsKey(anchor))
+		{
+			GrammarToken lastToken = this.data.ajaxs.get(anchor).token;
+			BeetlException ex = new BeetlException(BeetlException.AJAX_ALREADY_DEFINED, "已经在第" + lastToken.line + "行定义");
+			ex.pushToken(token);
+			throw ex;
+		}
+		this.data.ajaxs.put(anchor, ajaxStat);
+
+		return ajaxStat;
+	}
+
 	protected SwitchStatement parseSwitch(SiwchStContext sctx)
 	{
 		//		this.pbCtx.enterBlock();
@@ -427,7 +506,7 @@ public class AntlrProgramBuilder
 		ExpressionContext ect = sctx.parExpression().expression();
 		Expression exp = this.parseExpress(ect);
 		List<SwitchBlockStatementGroupContext> list = sctx.switchBlock().switchBlockStatementGroup();
-		TreeMap<Expression, BlockStatement> condtionsStatementsMap = new TreeMap<Expression, BlockStatement>();
+		LinkedHashMap<Expression, BlockStatement> condtionsStatementsMap = new LinkedHashMap<Expression, BlockStatement>();
 		List<Expression> conditionList = new ArrayList<Expression>();
 		BlockStatement defaultBlock = null;
 		for (SwitchBlockStatementGroupContext group : list)
@@ -459,17 +538,66 @@ public class AntlrProgramBuilder
 				this.getBTToken(sctx.getStart()));
 		return switchStat;
 	}
+	
+	
+	protected VarAssignExpression  parseAssingInExp(AssignGeneralInExpContext agc){
+
+		VarAssignExpression  vas = null;
+		ExpressionContext expCtx = agc.generalAssignExp().expression();
+		Expression exp = parseExpress(expCtx);
+		VarRefContext varRefCtx = agc.generalAssignExp().varRef();
+		if(varRefCtx.children.size()==1){
+			//var a=1;
+			Token token =  varRefCtx.Identifier().getSymbol();
+			vas = new VarAssignExpression(exp, getBTToken(token));
+			registerVar(vas);
+			return vas ;
+		}else{
+			 throw new UnsupportedOperationException("不支持，稍后在想");
+		}
+		
+	
+	}
+//	纪录一个新变量
+	protected void registerNewVar(ASTNode vas){
+		if (pbCtx.hasDefined(vas.token.text) != null)
+		{
+			GrammarToken token = pbCtx.hasDefined(vas.token.text);
+			BeetlException ex = new BeetlException(BeetlException.VAR_ALREADY_DEFINED, "已经在第" + token.line + "行定义");
+			ex.pushToken(vas.token);
+			throw ex;
+		}
+		pbCtx.addVar(vas.token.text);
+		pbCtx.setVarPosition(vas.token.text, vas);	
+	}
+	
+	//纪录一个变量
+	protected void registerVar(ASTNode vas){
+		pbCtx.setVarPosition(vas.token.text, vas);	
+	}
 
 	protected VarAssignStatement parseAssign(AssignMentContext amc)
 	{
 
 		VarAssignStatement vas = null;
-		if (amc instanceof AssignGeneralContext)
+		if (amc instanceof AssignGeneralInStContext)
 		{
-			AssignGeneralContext agc = (AssignGeneralContext) amc;
-			ExpressionContext expCtx = agc.expression();
+			AssignGeneralInStContext agc = (AssignGeneralInStContext) amc;
+			ExpressionContext expCtx = agc.generalAssignExp().expression();
 			Expression exp = parseExpress(expCtx);
-			vas = new VarAssignStatement(exp, getBTToken(agc.Identifier().getSymbol()));
+			VarRefContext varRefCtx = agc.generalAssignExp().varRef();
+			if(varRefCtx.children.size()==1){
+				//var a=1;
+				Token token =  varRefCtx.Identifier().getSymbol();
+				vas = new VarAssignStatement(exp, getBTToken(token));
+			}else{
+				// var a.b=1 since 2.7.0
+				
+				VarRef ref = this.parseVarRefInLeftExpression(varRefCtx);
+				
+				vas = new VarRefAssignStatement(exp, ref);
+			}
+			
 
 			return vas;
 		}
@@ -576,7 +704,7 @@ public class AntlrProgramBuilder
 			VarDefineNode[] varDefine = new VarDefineNode[vars.length];
 			for (int i = 0; i < vars.length; i++)
 			{
-				VarDefineNode varNode = new VarDefineNode(this.getBTToken(vars[i], line));
+				VarDefineNode varNode = new VarDefineNode(this.getBTToken(vars[i].trim(), line));
 				this.pbCtx.addVarAndPostion(varNode);
 				varDefine[i] = varNode;
 			}
@@ -584,18 +712,29 @@ public class AntlrProgramBuilder
 			Statement block = parseBlock(blockCtx.statement(), blockCtx);
 
 			this.pbCtx.exitBlock();
-
-			TagStatement tag = new TagVarBindingStatement(this.gt.getTagFactory(id), expList, block, varDefine,
-					this.getBTToken(id, line));
+			TagFactory tf = this.gt.getTagFactory(id);
+			if (tf == null)
+			{
+				BeetlException ex = new BeetlException(BeetlException.TAG_NOT_FOUND);
+				ex.pushToken(this.getBTToken(id, fc.functionNs().getStart().getLine()));
+				throw ex;
+			}
+			TagStatement tag = new TagVarBindingStatement(id, expList, block, varDefine, this.getBTToken(id, line));
 			return tag;
 		}
 		else
 		{
 			BlockContext blockCtx = fc.block();
 			Statement block = parseBlock(blockCtx.statement(), blockCtx);
-
-			TagStatement tag = new TagStatement(this.gt.getTagFactory(id), expList, block, this.getBTToken(id, fc
-					.functionNs().getStart().getLine()));
+			TagFactory tf = this.gt.getTagFactory(id);
+			if (tf == null)
+			{
+				BeetlException ex = new BeetlException(BeetlException.TAG_NOT_FOUND);
+				ex.pushToken(this.getBTToken(id, fc.functionNs().getStart().getLine()));
+				throw ex;
+			}
+			TagStatement tag = new TagStatement(id, expList, block, this.getBTToken(id, fc.functionNs().getStart()
+					.getLine()));
 			return tag;
 		}
 
@@ -732,7 +871,9 @@ public class AntlrProgramBuilder
 			{
 				data.dynamicObjectSet = ds.getIdList();
 			}
-			return null;
+			ds = new DirectiveStatement(directive, Collections.EMPTY_SET, this.getBTToken(token));
+			
+			return ds;
 
 		}
 		else if (directive.equalsIgnoreCase("safe_output_open".intern()))
@@ -761,7 +902,7 @@ public class AntlrProgramBuilder
 		String nsId = this.getID(idList);
 		GrammarToken btToken = new org.beetl.core.statement.GrammarToken(nsId, ctx.start.getLine(), 0);
 		//需要做些特殊处理的函数
-		if (nsId.equals("isEmpty"))
+		if (nsId.equals("isEmpty")||nsId.equals("isNotEmpty"))
 		{
 
 			if (exps.length != 0)
@@ -801,12 +942,35 @@ public class AntlrProgramBuilder
 		{
 			// debug函数传递额外的行数
 			Literal l = new Literal(btToken.line, btToken);
-			Expression[] newExps = new Expression[exps.length + 1];
+			Expression[] newExps = new Expression[exps.length + 2];
 			System.arraycopy(exps, 0, newExps, 0, exps.length);
-			newExps[exps.length] = l;
+			String[] expStr = this.getExpressionString(expListCtx);
+			newExps[newExps.length - 2] = new Literal(expStr, btToken);
+			newExps[newExps.length - 1] = l;
+			for (int i = 0; i < exps.length; i++)
+			{
+				if (!(exps[i] instanceof VarRef))
+				{
+					expStr[i] = null;
+				}
+			}
+
 			exps = newExps;
 			//可以通过配置查看是否支持debug，2.1再做
 
+		}else if(nsId.equals("decode")){
+			Expression[] newExps = new Expression[exps.length];
+			if(newExps.length>=4){
+				newExps[0] = exps[0];
+				newExps[1] = exps[1];
+				for(int i=2;i<exps.length;i++){
+					//参数改成runtime 执行
+					newExps[i] = new ExpressionRuntime(exps[i]);
+				}
+				exps = newExps;
+			}else{
+				//错误的使用了decode函数，不管了，等后面报错吧
+			}
 		}
 		FunctionExpression fe = new FunctionExpression(nsId, exps, vs, btToken);
 		return fe;
@@ -854,6 +1018,22 @@ public class AntlrProgramBuilder
 		return exps;
 	}
 
+	protected String[] getExpressionString(ExpressionListContext expListCtx)
+	{
+		{
+
+			if (expListCtx == null)
+				return new String[0];
+			List<ExpressionContext> ecList = expListCtx.expression();
+			String[] exps = new String[ecList.size()];
+			for (int i = 0; i < ecList.size(); i++)
+			{
+				exps[i] = ecList.get(i).getText();
+			}
+			return exps;
+		}
+	}
+
 	protected Statement parseForSt(ForStContext ctx)
 	{
 
@@ -871,10 +1051,26 @@ public class AntlrProgramBuilder
 			ForInControlContext forCtx = forTypeCtx.forInControl();
 			VarDefineNode forVar = new VarDefineNode(this.getBTToken(forCtx.Identifier().getSymbol()));
 
+			if (pbCtx.hasDefined(forVar.token.text) != null)
+			{
+				GrammarToken token = pbCtx.hasDefined(forVar.token.text);
+				BeetlException ex = new BeetlException(BeetlException.VAR_ALREADY_DEFINED, "已经在第" + token.line + "行定义");
+				ex.pushToken(forVar.token);
+				throw ex;
+			}
+
 			VarDefineNode loopStatusVar = new VarDefineNode(new org.beetl.core.statement.GrammarToken(forCtx
 					.Identifier().getSymbol().getText()
 					+ "LP", forCtx.Identifier().getSymbol().getLine(), 0));
 
+			if (pbCtx.hasDefined(loopStatusVar.token.text) != null)
+			{
+				GrammarToken token = pbCtx.hasDefined(loopStatusVar.token.text);
+				BeetlException ex = new BeetlException(BeetlException.VAR_ALREADY_DEFINED, "For循环隐含变量，已经在第"
+						+ token.line + "行定义");
+				ex.pushToken(loopStatusVar.token);
+				throw ex;
+			}
 			pbCtx.addVarAndPostion(forVar);
 
 			pbCtx.addVarAndPostion(loopStatusVar);
@@ -1046,9 +1242,8 @@ public class AntlrProgramBuilder
 		{
 			VarAssignStatement vas = this.parseAssign(amc);
 			listNode.add(vas);
-			pbCtx.addVar(vas.token.text);
-			pbCtx.setVarPosition(vas.token.text, vas);
-
+			this.registerNewVar(vas);
+			
 		}
 		VarAssignStatementSeq seq = new VarAssignStatementSeq(listNode.toArray(new Statement[0]), null);
 		return seq;
@@ -1164,6 +1359,15 @@ public class AntlrProgramBuilder
 			return exp;
 
 		}
+		else if (ctx instanceof AssignGeneralInExpContext)
+		{
+			
+			
+			AssignGeneralInExpContext agc = (AssignGeneralInExpContext) ctx;
+			VarAssignExpression  vas  = this.parseAssingInExp(agc);
+			return vas;
+			
+		}
 		else
 		{
 			throw new UnsupportedOperationException();
@@ -1278,7 +1482,7 @@ public class AntlrProgramBuilder
 		{
 			//变量的属性引用,回到第一个，构造一个变量
 			String varName = ids.get(0).getText();
-			VarRef ref = new VarRef(new VarAttribute[0], false, null, this.getBTToken("varName", ncc.start.getLine()));
+			VarRef ref = new VarRef(new VarAttribute[0], false, null, this.getBTToken(varName, ncc.start.getLine()));
 			this.pbCtx.setVarPosition(varName, ref);
 			insNode = new InstanceNode(ref);
 			i = 1;
@@ -1407,7 +1611,7 @@ public class AntlrProgramBuilder
 		}
 		else
 		{
-			//array
+			//map
 			JsonMapExpression json = null;
 			List<JsonKeyValueContext> listCtx = ctx.jsonKeyValue();
 			if (listCtx.size() == 0)
@@ -1416,7 +1620,7 @@ public class AntlrProgramBuilder
 			}
 			else
 			{
-				Map<String, Expression> map = new HashMap<String, Expression>(listCtx.size());
+				Map<String, Expression> map = new LinkedHashMap<String, Expression>(listCtx.size());
 				for (JsonKeyValueContext kvCtx : listCtx)
 				{
 					String key = null;
@@ -1532,7 +1736,7 @@ public class AntlrProgramBuilder
 		return new CompareExpression(a, b, mode, this.getBTToken(tn.getSymbol()));
 
 	}
-
+	
 	protected Expression parseVarRefExpression(VarRefContext varRef)
 	{
 
@@ -1594,7 +1798,39 @@ public class AntlrProgramBuilder
 
 		}
 
-		VarRef var = new VarRef(vas, hasSafe, safeExp, this.getBTToken(varRef.Identifier().getSymbol()));
+		VarRef var = new VarRef(vas, hasSafe, safeExp, this.getBTToken(varRef.getText(), varRef.Identifier()
+				.getSymbol().getLine()), this.getBTToken(varRef.Identifier().getSymbol()));
+		pbCtx.setVarPosition(varRef.Identifier().getText(), var);
+		return var;
+	}
+
+	protected VarRef parseVarRefInLeftExpression(VarRefContext varRef)
+	{
+
+		Expression safeExp = null;
+		Safe_outputContext soctx = varRef.safe_output();
+		if (soctx != null)
+		{
+		  throw new BeetlException(BeetlException.ERROR,"语法错,赋值表达式不能使用安全输出");
+
+		}
+		
+
+		List<VarAttributeContext> list = varRef.varAttribute();
+		VarAttribute[] vas = this.parseVarAttribute(list);
+		// 变量属性，用来收集，暂时未用上
+		if (vas.length > 0)
+		{
+			VarAttribute first = vas[0];
+			if (!(first instanceof VarSquareAttribute || first instanceof VarVirtualAttribute))
+			{
+				pbCtx.setVarAttr(varRef.Identifier().getText(), first.token.text);
+			}
+
+		}
+
+		VarRef var = new VarRef(vas, false, null, this.getBTToken(varRef.getText(), varRef.Identifier()
+				.getSymbol().getLine()), this.getBTToken(varRef.Identifier().getSymbol()));
 		pbCtx.setVarPosition(varRef.Identifier().getText(), var);
 		return var;
 	}
@@ -1672,7 +1908,24 @@ public class AntlrProgramBuilder
 					}
 					else
 					{
-						value = Integer.parseInt(strValue);
+						if (strValue.length() < 10)
+						{
+							value = Integer.parseInt(strValue);
+						}
+						else if (strValue.length() > 10)
+						{
+							value = Long.parseLong(strValue);
+						}
+						else if (strValue.compareTo("2147483647") > 0)
+						{
+
+							value = Long.parseLong(strValue);
+						}
+						else
+						{
+							value = Integer.parseInt(strValue);
+						}
+
 					}
 
 					break;
@@ -1703,7 +1956,56 @@ public class AntlrProgramBuilder
 
 	private String getStringValue(String strValue)
 	{
-		return strValue.substring(1, strValue.length() - 1);
+		char[] ch = strValue.toCharArray();
+		StringBuilder sb = new StringBuilder(strValue.length());
+		for (int i = 1; i < ch.length - 1; i++)
+		{
+			char c = ch[i];
+			if (c == '\\')
+			{
+				char spec = ch[++i];
+				char real = 0;
+				switch (spec)
+				{
+					case '\"':
+						real = '\"';
+						break;
+					case '\'':
+						real = '\'';
+						break;
+					case 't':
+						real = '\t';
+						break;
+					case 'r':
+						real = '\r';
+						break;
+					case 'n':
+						real = '\n';
+						break;
+					case 'b':
+						real = '\b';
+						break;
+					case 'f':
+						real = '\f';
+						break;
+					case '\\':
+						real = '\\';
+						break;
+
+					default:
+						// 16进制，8进制不支持，目前语法上可以通过，但未来取消
+						throw new RuntimeException("不支持的转义符号" + strValue);
+
+				}
+				sb.append(real);
+
+			}
+			else
+			{
+				sb.append(c);
+			}
+		}
+		return sb.toString();
 	}
 
 	private boolean isHighScaleNumber(String strValue)

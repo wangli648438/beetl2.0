@@ -30,6 +30,8 @@ package org.beetl.core.om;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 
+import org.beetl.core.exception.BeetlException;
+
 /**
  * 传入对象，获取对象对应的属性值 
  * @author joelli
@@ -38,7 +40,9 @@ import java.lang.reflect.Method;
 public class PojoMethodInvoker implements MethodInvoker
 {
 
-	Method method;
+	public Method method;
+	public Method setMethod;
+	private boolean isCheck = false;
 
 	/**
 	 * @param m 目标调用方法，应该是一个无参数的get方法
@@ -46,6 +50,7 @@ public class PojoMethodInvoker implements MethodInvoker
 	public PojoMethodInvoker(Method m)
 	{
 		this.method = m;
+
 	}
 
 	@Override
@@ -57,15 +62,22 @@ public class PojoMethodInvoker implements MethodInvoker
 		}
 		catch (IllegalArgumentException e)
 		{
-			throw new RuntimeException(e.getMessage());
+			throw new BeetlException(BeetlException.ATTRIBUTE_INVALID, "错误参数", e);
+
 		}
 		catch (IllegalAccessException e)
 		{
-			throw new RuntimeException(e.getMessage());
+			throw new BeetlException(BeetlException.ATTRIBUTE_INVALID, "无法访问", e);
+
 		}
 		catch (InvocationTargetException e)
 		{
-			throw new RuntimeException(e.getMessage());
+			Throwable target = e.getTargetException();
+			if (target instanceof BeetlException)
+			{
+				throw (BeetlException) target;
+			}
+			throw new BeetlException(BeetlException.ATTRIBUTE_INVALID, "属性访问异常", e.getTargetException());
 		}
 	}
 
@@ -73,6 +85,62 @@ public class PojoMethodInvoker implements MethodInvoker
 	public Class getReturnType()
 	{
 		return method.getReturnType();
+	}
+
+	@Override
+	public Method getMethod() {
+		return method;
+	}
+
+	@Override
+	public void set(Object ins, Object value) {
+		checkSetterMethod();
+		if(setMethod==null){
+			throw new BeetlException(BeetlException.ATTRIBUTE_INVALID, "属性访问异常");
+		}
+		try {
+			setMethod.invoke(ins, value);
+		} catch (IllegalAccessException e) {
+			throw new BeetlException(BeetlException.ATTRIBUTE_INVALID, "错误参数", e);
+		} catch (IllegalArgumentException e) {
+			throw new BeetlException(BeetlException.ATTRIBUTE_INVALID, "无法访问", e);
+		} catch (InvocationTargetException e) {
+			Throwable target = e.getTargetException();
+			if (target instanceof BeetlException)
+			{
+				throw (BeetlException) target;
+			}
+			throw new BeetlException(BeetlException.ATTRIBUTE_INVALID, "属性访问异常", e.getTargetException());
+		}	
+		
+	}
+	
+	private void checkSetterMethod(){
+		if(isCheck){
+			return ;
+		}
+		synchronized(method){
+			if(isCheck){
+				return ;
+			}
+			Class c = this.method.getDeclaringClass();
+			Class type = this.method.getReturnType();
+			String name = this.method.getName();
+			String setName = null;
+			if(name.startsWith("is")){
+				setName="set"+name.substring(2);
+			}else{
+				//getXXX-->setXXX
+				setName="set"+name.substring(3);
+			}
+			try{
+				setMethod = c.getMethod(setName, type);
+			}catch(Exception ex ){
+				setMethod = null;
+			}
+			isCheck = true;
+		}
+		
 	}
 
 }

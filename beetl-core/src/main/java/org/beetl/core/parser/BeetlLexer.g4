@@ -1,10 +1,11 @@
-/*
- * To change this license header, choose License Headers in Project Properties.
- * To change this template file, choose Tools | Templates
- * and open the template in the editor.
- */
 lexer grammar BeetlLexer;
-
+@lexer::members {
+	public void notifyListeners(LexerNoViableAltException e) {
+		String text = _input.getText(Interval.of(_tokenStartCharIndex, _input.index()));		
+		ANTLRErrorListener listener = getErrorListenerDispatch();
+		listener.syntaxError(this, null, _tokenStartLine, _tokenStartCharPositionInLine, text, e);
+	}
+}
 
 If:'if';
 For:'for';
@@ -21,8 +22,8 @@ Directive:'DIRECTIVE'|'directive';
 Case:'case';
 Default:'default';
 Try:'try';
-Catch:'catch';   
-
+Catch:'catch';  
+Ajax:'#ajax';
 LEFT_BRACE:'{';
 RIGHT_BRACE:'}';
 LEFT_PAR:'(';
@@ -99,8 +100,8 @@ FloatTypeSuffix : ('h'|'H') ;
 
 
 StringLiteral
-    :  '"' ( EscapeSequence | ~('\\'|'"') )* '"'
-    |  '\'' ( EscapeSequence | ~('\''|'\\') )* '\''
+    :  '"' ( EscapeSequence | ~('\\'|'"'|'\n'|'\r') )* '"'
+    |  '\'' ( EscapeSequence | ~('\''|'\\'|'\n'|'\r') )* '\''
     ;
 
 fragment

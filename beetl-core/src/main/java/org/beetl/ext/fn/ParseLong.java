@@ -34,10 +34,7 @@ import org.beetl.core.Context;
 import org.beetl.core.Function;
 
 /**
- * @ClassName: ParseLong
- * @Description: TODO(beetl转化为long类型)
  * @author chengql
- * @date 2014年5月8日 下午4:16:18
  * 
  */
 public class ParseLong implements Function
@@ -48,6 +45,8 @@ public class ParseLong implements Function
 	{
 		Object o = paras[0];
 		String str = "";
+		if (o == null)
+			throw new NullPointerException("Error:parseLong(null)");
 		long result;
 		if (o instanceof Number)
 		{

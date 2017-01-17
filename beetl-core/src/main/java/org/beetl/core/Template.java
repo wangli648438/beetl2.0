@@ -40,6 +40,9 @@ import org.beetl.core.exception.BeetlException;
 import org.beetl.core.io.ByteWriter_Byte;
 import org.beetl.core.io.ByteWriter_Char;
 import org.beetl.core.misc.BeetlUtil;
+import org.beetl.core.statement.AjaxStatement;
+import org.beetl.core.statement.ErrorGrammarProgram;
+import org.beetl.core.statement.GrammarToken;
 import org.beetl.core.statement.Program;
 
 /** 模板类
@@ -52,7 +55,7 @@ public class Template
 	public Configuration cf;
 	public GroupTemplate gt;
 	public boolean isRoot = true;
-
+	public String ajaxId = null;
 	Context ctx = new Context();
 
 	protected Template(GroupTemplate gt, Program program, Configuration cf)
@@ -78,7 +81,7 @@ public class Template
 	/**
 	 * 获取模板输出的文本,输出到Writer里
 	 * 
-	 * @param w
+	 * @param writer
 	 * @throws BeetlException
 	 */
 	public void renderTo(Writer writer) throws BeetlException
@@ -117,16 +120,43 @@ public class Template
 				}
 			}
 			program.metaData.initContext(ctx);
+			if (ajaxId != null)
+			{
+				AjaxStatement ajax = program.metaData.getAjax(ajaxId);
+				if (ajax == null)
+				{
+					BeetlException be = new BeetlException(BeetlException.AJAX_NOT_FOUND);
 
-			program.execute(ctx);
-			byteWriter.flush();
+					be.pushToken(new GrammarToken(ajaxId, 0, 0));
+					throw be;
+				}
+				ajax.execute(ctx);
+			}
+			else
+			{
+				program.execute(ctx);
+			}
+			
+			if (isRoot){
+				byteWriter.flush();
+			}
 		}
 		catch (BeetlException e)
 		{
-			e.pushResource(this.program.id);
+			if (!(program instanceof ErrorGrammarProgram))
+			{
+				e.pushResource(this.program.res.id);
+			}
+
 			// 是否打印异常，只有根模板才能打印异常
 			if (!isRoot)
 				throw e;
+
+			if (e.detailCode == BeetlException.CLIENT_IO_ERROR_ERROR && ctx.gt.conf.isIgnoreClientIOError)
+			{
+				return;
+			}
+
 			Writer w = BeetlUtil.getWriterByByteWriter(ctx.byteWriter);
 
 			e.gt = this.program.gt;
@@ -138,12 +168,35 @@ public class Template
 				throw e;
 			}
 			errorHandler.processExcption(e, w);
+			try {
+				ctx.byteWriter.flush();
+			} catch (IOException e1) {
+				//输出到客户端
+			}
+
 		}
 		catch (IOException e)
 		{
 			if (!ctx.gt.conf.isIgnoreClientIOError)
 			{
-				throw new RuntimeException(e);
+
+				BeetlException be = new BeetlException(BeetlException.CLIENT_IO_ERROR_ERROR, e.getMessage(), e);
+				be.pushResource(this.program.res.id);
+				be.pushToken(new GrammarToken(this.program.res.id, 0, 0));
+				ErrorHandler errorHandler = this.gt.getErrorHandler();
+
+				if (errorHandler == null)
+				{
+					throw be;
+				}
+				Writer w = BeetlUtil.getWriterByByteWriter(ctx.byteWriter);
+				errorHandler.processExcption(be, w);
+				try {
+					ctx.byteWriter.flush();
+				} catch (IOException e1) {
+					//输出到客户端
+				}
+
 			}
 			else
 			{
@@ -203,21 +256,22 @@ public class Template
 	public void binding(Map map)
 	{
 		Map<String, Object> values = map;
-		if (values != null)
+		if(values==null) return ;
+		for (Entry<String,Object> entry : values.entrySet())
 		{
-			ctx.globalVar = new HashMap<String, Object>();
-			Map<String, Object> target = ctx.globalVar;
-			for (Entry<String, Object> entry : values.entrySet())
-			{
-				target.put(entry.getKey(), entry.getValue());
-			}
+			this.binding(entry.getKey(), entry.getValue());
 		}
-
+		
 	}
 
 	public void fastBinding(Map map)
 	{
 		ctx.globalVar = map;
+	}
+
+	public Context getCtx()
+	{
+		return this.ctx;
 	}
 
 	//	public void fastRender(Map map, ByteWriter byteWriter)

@@ -35,8 +35,7 @@ import org.beetl.core.Function;
 
 /**
  * 
- * @author 张健川 dlut.zjc@gmail.com
- * @create 2014-04-16
+ * @author 张健川 dlut.zjc@gmail.com ,xiandafu
  */
 public class ParseDouble implements Function
 {
@@ -45,22 +44,18 @@ public class ParseDouble implements Function
 	public Object call(Object[] paras, Context ctx)
 	{
 		Object o = paras[0];
+		if (o == null)
+			throw new NullPointerException("Error:parseDouble(null)");
 		String str = "";
 		double result;
 		if (o instanceof Number)
 		{
 			Double n = ((Number) o).doubleValue();
-			str = String.valueOf(n);
+			return n;
 		}
 		else
 		{
 			str = o.toString();
-		}
-		Pattern pattern = Pattern.compile("-?[0-9]*.?[0-9]*");
-		Matcher isNum = pattern.matcher(str);
-		if (o == null || o.equals("") || !isNum.matches())
-		{
-			throw new RuntimeException("无法正确转换至double格式");
 		}
 		try
 		{
@@ -68,22 +63,28 @@ public class ParseDouble implements Function
 		}
 		catch (NumberFormatException e)
 		{
-			throw new RuntimeException("超出double范围");
+			throw new RuntimeException("不能转化"+str,e);
 		}
+		
 		return result;
 	}
 
-	//	public static void main(String[] args)
-	//	{
-	//		ParseDouble pDouble = new ParseDouble();
-	//		Context ctx = new Context();
-	//		System.out.println(pDouble.call(new Object[]
-	//		{ -01.}, ctx));
-	//		System.out.println(pDouble.call(new Object[]
-	//		{ 2332.23213 }, ctx));
-	//		System.out.println(pDouble.call(new Object[]
-	//		{ "-1.023" }, ctx));
-	//		System.out.println(pDouble.call(new Object[]
-	//		{ "abcd" }, ctx));
-	//	}
+		public static void main(String[] args)
+		{
+			Double d = 1232323232323.89;
+			System.out.println(d);
+			String str = d.toString();
+			double c = Double.parseDouble(str);
+			System.out.println(c);
+			ParseDouble pDouble = new ParseDouble();
+			Context ctx = new Context();
+			System.out.println(pDouble.call(new Object[]
+			{ -01.}, ctx));
+			System.out.println(pDouble.call(new Object[]
+			{ 2332.23213 }, ctx));
+			System.out.println(pDouble.call(new Object[]
+			{ "-1.023" }, ctx));
+			System.out.println(pDouble.call(new Object[]
+			{ "abcd" }, ctx));
+		}
 }
